@@ -114,7 +114,7 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                                                 {agent.overdueTasksCount} en retard
                                             </span>
                                         ) : (
-                                            <span style={{ color: 'var(--success)', fontSize: '0.875rem' }}>À jour</span>
+                                            <span style={{ color: 'var(--success)', fontSize: '0.875rem' }}>À jour</span> 
                                         )}
                                     </div>
                                 </td>
