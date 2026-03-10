@@ -1,0 +1,123 @@
+import { Users, GraduationCap, Target, PieChart, Download } from 'lucide-react';
+import type { StudentLead, Campaign } from '../types';
+import * as XLSX from 'xlsx';
+import { useToast } from './Toast';
+
+interface DashboardProps {
+    leads: StudentLead[];
+    campaigns: Campaign[];
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
+    const { addToast } = useToast();
+    const totalLeads = leads.length;
+    const inscritLeads = leads.filter(l => l.status === 'Inscrit').length;
+    const convRate = totalLeads > 0 ? ((inscritLeads / totalLeads) * 100).toFixed(1) : '0';
+
+    const stats = [
+        { label: 'Total Prospects', value: totalLeads.toString(), icon: Users, color: 'var(--primary)' },
+        { label: 'Taux de Conversion', value: `${convRate}%`, icon: Target, color: 'var(--success)' },
+        { label: 'Campagnes Actives', value: campaigns.length.toString(), icon: GraduationCap, color: 'var(--accent)' },
+        { label: 'Dossiers Envoyés', value: leads.filter(l => l.status === 'Dossier envoyé').length.toString(), icon: PieChart, color: 'var(--warning)' },
+    ];
+
+    const exportToExcel = () => {
+        const dataToExport = leads.map(l => ({
+            'ID': l.id,
+            'Prénom': l.firstName,
+            'Nom': l.lastName,
+            'Email': l.email,
+            'Téléphone': l.phone,
+            'Pays': l.country,
+            'Ville': l.city,
+            'Filière': l.fieldOfInterest,
+            'Niveau': l.level,
+            'Statut': l.status,
+            'Canal': l.source,
+            'Date Ajout': new Date(l.createdAt).toLocaleDateString()
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Rapport Global");
+        XLSX.writeFile(workbook, `rapport_crm_${new Date().toISOString().split('T')[0]}.xlsx`);
+        addToast("Rapport global exporté avec succès !", "success");
+    };
+
+    return (
+        <div>
+            <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Vue Décisionnelle</h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Analyse des performances de recrutement pour la rentrée 2026.</p>
+                </div>
+                <button onClick={exportToExcel} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Download size={18} /> Exporter Rapport Global
+                </button>
+            </div>
+
+            <div className="stat-grid">
+                {stats.map((stat, index) => (
+                    <div key={index} className="card" style={{ position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'relative', zIndex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                                <div style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
+                                    <stat.icon size={20} color={stat.color} />
+                                </div>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>{stat.label}</p>
+                            <h3 style={{ fontSize: '1.75rem', fontWeight: 800, marginTop: '0.25rem' }}>{stat.value}</h3>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Performance par Canal</h3>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {['TikTok', 'Facebook', 'Salon', 'Agent'].map((canal) => {
+                            const count = leads.filter(l => l.source === canal).length;
+                            const percentage = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
+                            const colors: any = { 'TikTok': '#ff0050', 'Facebook': '#1877f2', 'Salon': 'var(--accent)', 'Agent': 'var(--primary)' };
+
+                            return (
+                                <div key={canal}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                                        <span style={{ fontWeight: 500 }}>{canal}</span>
+                                        <span style={{ color: 'var(--text-muted)' }}>{percentage}%</span>
+                                    </div>
+                                    <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                                        <div style={{ width: `${percentage}%`, height: '100%', background: colors[canal] || 'var(--primary)', borderRadius: '4px' }}></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="card">
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>Activité Recrutement</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                        {leads.slice(0, 4).map((lead, i) => (
+                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--glass)', border: '1px solid var(--glass-border)', display: 'grid', placeItems: 'center' }}>
+                                    <GraduationCap size={20} color="var(--primary)" />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{lead.firstName} {lead.lastName}</p>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Inscrit en {lead.fieldOfInterest}</p>
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lead.status}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default Dashboard;
