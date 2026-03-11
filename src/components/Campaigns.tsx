@@ -144,7 +144,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
     const handleAddCampaign = async () => {
         if (!agents || agents.length === 0) {
-            addToast("Attention : Vous devez d'abord ajouter au moins un agent pour pouvoir créer une campagne et assigner des prospects.", "error");
+            addToast("Attention : Vous devez d'abord ajouter au moins un agent pour pouvoir créer une campagne.", "error");
             return;
         }
 
@@ -153,14 +153,10 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
         const source = await showPrompt("Source Marketing", "Source (Facebook / TikTok / Salon) :", "Facebook");
         if (!source) return;
 
-        // On affiche la liste des agents pour info dans le prompt
-        const agentsList = agents.map(a => `- ${a.name}`).join('\n');
-        const agentName = await showPrompt("Conseiller Responsable", `Choisissez un agent pour cette campagne :\n${agentsList}\n\nEntrez le nom exact de l'agent :`);
-        if (!agentName) return;
-
-        const selectedA = agents.find(a => a.name.toLowerCase() === agentName.toLowerCase());
+        // Assignation automatique du meilleur agent selon la charge
+        const selectedA = getBestAgentForLead(agents, leads);
         if (!selectedA) {
-            addToast("Agent introuvable. Veuillez entrer le nom exact.", "error");
+            addToast("Erreur lors du calcul de l'agent disponible.", "error");
             return;
         }
 
@@ -188,13 +184,13 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                     }).select().single();
 
                 if (errorAlt) addToast("Erreur : " + errorAlt.message, "error");
-                else if (dataAlt) addToast(`Campagne "${dataAlt.name}" créée (Attribution agent ignorée car colonne manquante).`, "success");
+                else if (dataAlt) addToast(`Campagne "${dataAlt.name}" créée (Attribution agent ignorée).`, "success");
             } else {
                 addToast("Erreur : " + error.message, "error");
             }
         }
         else if (data) {
-            addToast(`Campagne "${data.name}" créée et assignée à ${selectedA.name}.`, "success");
+            addToast(`Campagne "${data.name}" créée et assignée automatiquement à ${selectedA.name}.`, "success");
             if (onRefresh) await onRefresh();
         }
     };

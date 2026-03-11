@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { StudentLead, Campaign, Agent, StudyField } from '../types';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
+import { getBestAgentForLead } from '../utils/assignmentService';
 
 interface LeadModalProps {
     isOpen: boolean;
@@ -9,10 +10,11 @@ interface LeadModalProps {
     onSave: (lead: StudentLead) => void;
     campaigns: Campaign[];
     agents: Agent[];
+    leads: StudentLead[];
     profile: any;
     initialStatusId?: string;
 }
-const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, profile, initialStatusId = 'nouveau' }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau' }) => {
     const { addToast } = useToast();
     const [newLead, setNewLead] = useState<Partial<StudentLead>>({
         firstName: '',
@@ -25,14 +27,20 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         level: 'Licence 1',
         statusId: initialStatusId,
         campaignId: '',
-        agentId: '',
-        note: '',
+        notes: '',
     });
 
     if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Assignation automatique
+        const selectedA = getBestAgentForLead(agents, leads);
+        if (!selectedA) {
+            addToast("Aucun agent disponible pour l'assignation.", "error");
+            return;
+        }
 
         const dbLead = {
             first_name: newLead.firstName,
@@ -45,7 +53,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
             study_level: newLead.level,
             status_id: newLead.statusId || initialStatusId,
             campaign_id: newLead.campaignId,
-            agent_id: newLead.agentId,
+            agent_id: selectedA.id,
             organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
         };
 
@@ -54,12 +62,12 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         if (error) {
             addToast("Erreur lors de la création : " + error.message, "error");
         } else if (data) {
-            if (newLead.note) {
+            if (newLead.notes) {
                 await supabase.from('lead_interactions').insert({
                     lead_id: data.id,
                     agent_id: data.agent_id,
                     type: 'note',
-                    content: newLead.note
+                    content: newLead.notes
                 });
             }
             onSave({
@@ -80,7 +88,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 lastInteractionAt: data.last_interaction_at,
                 createdAt: data.created_at
             });
-            addToast("Prospect ajouté avec succès !", "success");
+            addToast(`Prospect ajouté et assigné à ${selectedA.name} !`, "success");
             onClose();
         }
     };
@@ -128,23 +136,11 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                         ))}
                     </select>
 
-                    <select
-                        required
-                        value={newLead.agentId}
-                        onChange={e => setNewLead({ ...newLead, agentId: e.target.value })}
-                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
-                    >
-                        <option value="">Conseiller (Obligatoire)</option>
-                        {agents.map(a => (
-                            <option key={a.id} value={a.id}>{a.name}</option>
-                        ))}
-                    </select>
-
                     <input type="text" placeholder="Niveau d'étude" required value={newLead.level} onChange={e => setNewLead({ ...newLead, level: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2' }} />
                     <textarea
                         placeholder="Note / Commentaire sur le prospect..."
-                        value={newLead.note}
-                        onChange={e => setNewLead({ ...newLead, note: e.target.value })}
+                        value={newLead.notes}
+                        onChange={e => setNewLead({ ...newLead, notes: e.target.value })}
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2', minHeight: '100px', resize: 'vertical' }}
                     />
 

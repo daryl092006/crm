@@ -69,6 +69,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 initialStatusId={selectedStatusId}
                 campaigns={campaigns || []}
                 agents={agents}
+                leads={leads}
                 profile={profile}
             />
 
