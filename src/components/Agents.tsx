@@ -1,14 +1,53 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserSquare2, TrendingUp, Award, MoreVertical } from 'lucide-react';
-import type { Agent } from '../types';
+import type { Agent, Campaign } from '../types';
 import { useToast } from './Toast';
+import AgentStatsModal from './AgentStatsModal';
+import AddAgentModal from './AddAgentModal';
+import InvitationsManagerModal from './InvitationsManagerModal';
+import { supabase } from '../supabaseClient';
 
 interface AgentsProps {
+    profile: any;
     agents: Agent[];
+    leads: any[];
+    setLeads: React.Dispatch<React.SetStateAction<any[]>>;
+    campaigns: Campaign[];
+    statuses: any[];
+    onRefresh?: () => Promise<void>;
 }
 
-const Agents: React.FC<AgentsProps> = ({ agents }) => {
+const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campaigns, statuses, onRefresh }) => {
     const { addToast } = useToast();
+    const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isInviteManagerOpen, setIsInviteManagerOpen] = useState(false);
+
+
+    const handleAddAgent = async (fullName: string) => {
+        try {
+            if (!profile?.organization_id) throw new Error("ID d'organisation introuvable");
+
+            const { error } = await supabase
+                .from('profiles')
+                .insert([{
+                    full_name: fullName,
+                    role: 'agent',
+                    organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000',
+                    is_active: true
+                }]);
+
+            if (error) throw error;
+
+            addToast(`${fullName} a été ajouté à l'équipe !`, "success");
+            if (onRefresh) await onRefresh();
+            setIsAddModalOpen(false);
+        } catch (error: any) {
+            addToast(error.message || "Erreur lors de la création de l'agent", "error");
+            throw error;
+        }
+    };
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -16,25 +55,28 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                     <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Équipe de Conseillers</h1>
                     <p style={{ color: 'var(--text-muted)' }}>Gérez les performances et l'attribution des prospects.</p>
                 </div>
-                <button
-                    onClick={() => {
-                        const email = prompt("Email de l'agent :");
-                        if (!email) return;
-                        addToast("Demande envoyée. Utilisez l'administration Supabase pour finaliser la création du compte.", "info");
-                    }}
-                    className="btn btn-primary"
-                >
-                    <UserSquare2 size={18} />
-                    Ajouter un Agent
-                </button>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="btn btn-primary"
+                        style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
+                    >
+                        <UserSquare2 size={18} />
+                        Ajouter un Agent
+                    </button>
+                </div>
             </div>
 
+
             <div className="stat-grid">
+
                 <div className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Agent Top Performance</p>
-                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>Sarah Dubois</h3>
+                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>
+                                {agents.length > 0 ? [...agents].sort((a, b) => b.conversionRate - a.conversionRate)[0].name : 'Aucun agent'}
+                            </h3>
                         </div>
                         <Award size={24} color="#ffd700" />
                     </div>
@@ -43,7 +85,11 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Délai moyen de relance</p>
-                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>1.5h</h3>
+                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>
+                                {agents.length > 0
+                                    ? (agents.reduce((acc, a) => acc + (a.avgResponseTime || 0), 0) / agents.length).toFixed(1)
+                                    : 0}h
+                            </h3>
                         </div>
                         <TrendingUp size={24} color="var(--success)" />
                     </div>
@@ -114,7 +160,7 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                                                 {agent.overdueTasksCount} en retard
                                             </span>
                                         ) : (
-                                            <span style={{ color: 'var(--success)', fontSize: '0.875rem' }}>À jour</span> 
+                                            <span style={{ color: 'var(--success)', fontSize: '0.875rem' }}>À jour</span>
                                         )}
                                     </div>
                                 </td>
@@ -123,7 +169,7 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                                 </td>
                                 <td>
                                     <button
-                                        onClick={() => addToast(`Statistiques détaillées de ${agent.name} bientôt disponibles.`, "info")}
+                                        onClick={() => setSelectedAgent(agent)}
                                         style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
                                     >
                                         <MoreVertical size={18} />
@@ -134,6 +180,27 @@ const Agents: React.FC<AgentsProps> = ({ agents }) => {
                     </tbody>
                 </table>
             </div>
+
+            <AgentStatsModal
+                agent={selectedAgent}
+                leads={leads.filter(l => l.agentId === selectedAgent?.id)}
+                setLeads={setLeads}
+                campaigns={campaigns}
+                profile={profile}
+                statuses={statuses}
+                onClose={() => setSelectedAgent(null)}
+            />
+
+            <AddAgentModal
+                isOpen={isAddModalOpen}
+                onClose={() => setIsAddModalOpen(false)}
+                onAdd={handleAddAgent}
+            />
+
+            <InvitationsManagerModal
+                isOpen={isInviteManagerOpen}
+                onClose={() => setIsInviteManagerOpen(false)}
+            />
         </div>
     );
 };

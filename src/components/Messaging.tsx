@@ -1,46 +1,83 @@
 import React, { useState } from 'react';
 import { Send, Calendar, Filter } from 'lucide-react';
-import type { StudentLead, Agent, Interaction } from '../types';
+import type { StudentLead, Agent, Template, Sequence } from '../types';
 import { useToast } from './Toast';
+import { usePopup } from './Popup';
+import SequenceBuilder from './SequenceBuilder';
+import { supabase } from '../supabaseClient';
+
 
 interface MessagingProps {
+    profile: any;
+    leads: StudentLead[];
     setLeads: React.Dispatch<React.SetStateAction<StudentLead[]>>;
     agents: Agent[];
+    templates: Template[];
+    sequences: Sequence[];
 }
 
-const Messaging: React.FC<MessagingProps> = ({ setLeads, agents }) => {
+const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, agents, templates, sequences }) => {
+
     const { addToast } = useToast();
+    const { showPrompt } = usePopup();
     const [activeTab, setActiveTab] = useState<'send' | 'scheduled'>('send');
     const [message, setMessage] = useState('');
-    const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+    const [editingSequence, setEditingSequence] = useState<Sequence | null>(null);
 
-    const templates = [
-        { id: 1, title: 'Accueil Nouveau Prospect', category: 'WhatsApp', content: 'Bonjour {{firstName}}, bienvenue chez EliteCRM !' },
-        { id: 2, title: 'Rappel Dossier Incomplet', category: 'Email', content: 'Cher(e) {{firstName}}, votre dossier est incomplet.' },
-        { id: 3, title: 'Invitation Webinaire Filières', category: 'WhatsApp', content: 'Venez découvrir nos filières, {{firstName}} !' },
-        { id: 4, title: 'Deadline Inscription', category: 'SMS', content: 'C\'est presque fini {{firstName}} !' },
-    ];
 
-    const handleSend = () => {
+
+    const handleSend = async () => {
         if (!message) return;
 
-        setLeads(prev => prev.map(lead => {
-            const newInteraction: Interaction = {
-                id: `int-${Date.now()}`,
-                type: 'WhatsApp',
-                content: message.replace('{{firstName}}', lead.firstName),
-                date: new Date().toISOString(),
-                agentName: agents[0]?.name || 'System'
-            };
-            return {
-                ...lead,
-                interactions: [newInteraction, ...lead.interactions]
-            };
-        }));
+        try {
+            const { data: { session: activeSession } } = await supabase.auth.getSession();
+            const currentUserId = activeSession?.user?.id || profile?.id;
 
-        setMessage('');
-        addToast('Messages envoyés aux prospects ciblés !', 'success');
+            if (!currentUserId) {
+                addToast("Impossible d'identifier l'expéditeur.", "error");
+                return;
+            }
+
+            // In a real scenarios, you would filter leads by criteria. 
+            // Here we'll simulate sending to all leads currently loaded as an example.
+            const newInteractions = leads.map(lead => ({
+                lead_id: lead.id,
+                agent_id: currentUserId,
+                type: 'whatsapp',
+                content: message.replace('{{firstName}}', lead.firstName),
+                created_at: new Date().toISOString()
+            }));
+
+            const { error } = await supabase
+                .from('lead_interactions')
+                .insert(newInteractions);
+
+            if (error) throw error;
+
+            // Update local state by adding the interactions to each lead
+            setLeads(prev => prev.map(lead => ({
+                ...lead,
+                interactions: [
+                    {
+                        id: `new-${Date.now()}`,
+                        leadId: lead.id,
+                        agentId: currentUserId,
+                        type: 'whatsapp',
+                        content: message.replace('{{firstName}}', lead.firstName),
+                        createdAt: new Date().toISOString()
+                    },
+                    ...(lead.interactions || [])
+                ]
+            })));
+
+            setMessage('');
+            addToast('Messages envoyés et enregistrés en base de données !', 'success');
+        } catch (error: any) {
+            addToast(error.message || "Erreur lors de l'envoi", "error");
+        }
     };
+
 
     return (
         <div>
@@ -108,9 +145,21 @@ const Messaging: React.FC<MessagingProps> = ({ setLeads, agents }) => {
                                 </div>
                             ))}
                             <button
-                                onClick={() => {
-                                    const title = prompt("Titre du nouveau template :");
-                                    if (title) addToast(`Template "${title}" enregistré avec succès.`, "success");
+                                onClick={async () => {
+                                    const title = await showPrompt("Nouveau Template", "Entrez le titre du nouveau template :");
+                                    if (!title) return;
+                                    const content = await showPrompt("Contenu du Template", "Entrez le message :");
+                                    if (!content) return;
+
+                                    const { error } = await supabase.from('messaging_templates').insert({
+                                        title,
+                                        content,
+                                        category: 'Général',
+                                        organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
+                                    });
+
+                                    if (error) addToast("Erreur lors de la création : " + error.message, "error");
+                                    else addToast(`Template "${title}" enregistré avec succès.`, "success");
                                 }}
                                 className="btn" style={{ border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                                 + Nouveau Template
@@ -169,33 +218,41 @@ const Messaging: React.FC<MessagingProps> = ({ setLeads, agents }) => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h3 style={{ fontSize: '1.125rem' }}>Séquences de Relances Automatisées</h3>
                         <button
-                            onClick={() => addToast("Séquence de relance automatique activée.", "success")}
+                            onClick={async () => {
+                                const name = await showPrompt("Nouvelle Séquence", "Entrez le nom de la séquence :");
+                                if (!name) return;
+
+                                const { error } = await supabase.from('sequences').insert({
+                                    name,
+                                    is_active: true,
+                                    organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
+                                });
+
+                                if (error) addToast("Erreur lors de la création : " + error.message, "error");
+                                else addToast(`Séquence "${name}" activée.`, "success");
+                            }}
                             className="btn btn-primary">+ Créer une Séquence</button>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {[
-                            { title: 'Séquence Bienvenue TikTok', steps: '3 étapes', active: true, leads: 145 },
-                            { title: 'Relance Salon Paris', steps: '2 étapes', active: true, leads: 32 },
-                            { title: 'Inscriptions Master Finance', steps: '4 étapes', active: false, leads: 0 },
-                        ].map((seq, i) => (
-                            <div key={i} style={{ padding: '1.25rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        {sequences.map((seq) => (
+                            <div key={seq.id} style={{ padding: '1.25rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                    <div style={{ padding: '0.75rem', background: seq.active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
-                                        <Calendar size={20} color={seq.active ? 'var(--success)' : 'var(--text-muted)'} />
+                                    <div style={{ padding: '0.75rem', background: seq.isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)', borderRadius: '10px' }}>
+                                        <Calendar size={20} color={seq.isActive ? 'var(--success)' : 'var(--text-muted)'} />
                                     </div>
                                     <div>
-                                        <h4 style={{ fontSize: '1rem', fontWeight: 600 }}>{seq.title}</h4>
-                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{seq.steps} • {seq.leads} prospects actifs</p>
+                                        <h4 style={{ fontSize: '1rem', fontWeight: 600 }}>{seq.name}</h4>
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{seq.stepsCount || 0} étapes • {seq.activeLeadsCount || 0} prospects actifs</p>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: seq.active ? 'var(--success)' : 'var(--text-muted)' }}></div>
-                                        <span style={{ fontSize: '0.8125rem', color: seq.active ? 'var(--success)' : 'var(--text-muted)' }}>{seq.active ? 'Active' : 'Pause'}</span>
+                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: seq.isActive ? 'var(--success)' : 'var(--text-muted)' }}></div>
+                                        <span style={{ fontSize: '0.8125rem', color: seq.isActive ? 'var(--success)' : 'var(--text-muted)' }}>{seq.isActive ? 'Active' : 'Pause'}</span>
                                     </div>
                                     <button
-                                        onClick={() => addToast(`Édition de : ${seq.title}`, "info")}
+                                        onClick={() => setEditingSequence(seq)}
                                         className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: 'white' }}>Éditer</button>
                                 </div>
                             </div>
@@ -203,6 +260,11 @@ const Messaging: React.FC<MessagingProps> = ({ setLeads, agents }) => {
                     </div>
                 </div>
             )}
+
+            <SequenceBuilder
+                sequence={editingSequence}
+                onClose={() => setEditingSequence(null)}
+            />
         </div>
     );
 };

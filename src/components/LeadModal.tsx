@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import type { StudentLead, LeadStatus, Campaign, Agent } from '../types';
-import { getBestAgentForLead } from '../utils/assignmentService';
+import type { StudentLead, Campaign, Agent, StudyField } from '../types';
+import { supabase } from '../supabaseClient';
+import { useToast } from './Toast';
 
 interface LeadModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (lead: StudentLead) => void;
-    initialStatus?: LeadStatus;
     campaigns: Campaign[];
     agents: Agent[];
-    allLeads: StudentLead[];
+    profile: any;
+    initialStatusId?: string;
 }
-
-const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, allLeads, initialStatus = 'Nouveau' }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, profile, initialStatusId = 'nouveau' }) => {
+    const { addToast } = useToast();
     const [newLead, setNewLead] = useState<Partial<StudentLead>>({
         firstName: '',
         lastName: '',
@@ -20,79 +21,80 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         phone: '',
         country: 'Sénégal',
         city: '',
-        fieldOfInterest: 'Finance Digitale',
+        fieldOfInterest: 'Finance Digitale' as StudyField,
         level: 'Licence 1',
-        source: 'Autre',
-        status: initialStatus,
+        statusId: initialStatusId,
         campaignId: '',
-        notes: ''
+        agentId: '',
+        note: '',
     });
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // L'assignation se fait en fonction de la charge actuelle.
-        const assignedAgent = getBestAgentForLead(agents, allLeads);
-
-        const lead: StudentLead = {
-            id: `lead-${Date.now()}`,
-            firstName: newLead.firstName || '',
-            lastName: newLead.lastName || '',
-            email: newLead.email || '',
-            phone: newLead.phone || '',
-            country: newLead.country || '',
-            city: newLead.city || '',
-            fieldOfInterest: (newLead.fieldOfInterest as any) || 'Finance Digitale',
-            level: newLead.level || '',
-            source: (newLead.source as any) || 'Autre',
-            status: (newLead.status as any) || 'Nouveau',
-            campaignId: newLead.campaignId || campaigns[0]?.id || '',
-            agentId: assignedAgent?.id,
-            phoneVerification: 'Inconnu',
-            notes: newLead.notes || '',
-            interactions: [],
-            createdAt: new Date().toISOString(),
+        const dbLead = {
+            first_name: newLead.firstName,
+            last_name: newLead.lastName,
+            email: newLead.email,
+            phone: newLead.phone,
+            country: newLead.country,
+            city: newLead.city,
+            field_of_interest: newLead.fieldOfInterest,
+            study_level: newLead.level,
+            status_id: newLead.statusId || initialStatusId,
+            campaign_id: newLead.campaignId,
+            agent_id: newLead.agentId,
+            organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
         };
 
-        onSave(lead);
-        onClose();
-        setNewLead({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            country: 'Sénégal',
-            city: '',
-            fieldOfInterest: 'Finance Digitale',
-            level: 'Licence 1',
-            source: 'Autre',
-            status: initialStatus,
-            campaignId: '',
-            notes: ''
-        });
+        const { data, error } = await supabase.from('leads').insert(dbLead).select().single();
+
+        if (error) {
+            addToast("Erreur lors de la création : " + error.message, "error");
+        } else if (data) {
+            if (newLead.note) {
+                await supabase.from('lead_interactions').insert({
+                    lead_id: data.id,
+                    agent_id: data.agent_id,
+                    type: 'note',
+                    content: newLead.note
+                });
+            }
+            onSave({
+                id: data.id,
+                organizationId: data.organization_id,
+                campaignId: data.campaign_id,
+                agentId: data.agent_id,
+                statusId: data.status_id,
+                firstName: data.first_name,
+                lastName: data.last_name,
+                email: data.email,
+                phone: data.phone,
+                country: data.country,
+                city: data.city,
+                fieldOfInterest: data.field_of_interest,
+                level: data.study_level,
+                score: data.score || 0,
+                lastInteractionAt: data.last_interaction_at,
+                createdAt: data.created_at
+            });
+            addToast("Prospect ajouté avec succès !", "success");
+            onClose();
+        }
     };
 
     return (
         <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.8)',
-            zIndex: 2000,
-            display: 'grid',
-            placeItems: 'center',
-            padding: '2rem'
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'grid',
+            placeItems: 'center', padding: '2rem'
         }}>
             <div className="card" style={{ width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Nouveau Candidat</h2>
-                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.5rem' }}>
-                        ×
-                    </button>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Nouveau Prospect</h2>
+                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.5rem' }}>×</button>
                 </div>
                 <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <input type="text" placeholder="Prénom" required value={newLead.firstName} onChange={e => setNewLead({ ...newLead, firstName: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
@@ -101,47 +103,54 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     <input type="tel" placeholder="Téléphone" required value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Pays" required value={newLead.country} onChange={e => setNewLead({ ...newLead, country: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Ville" required value={newLead.city} onChange={e => setNewLead({ ...newLead, city: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
+
                     <select
                         value={newLead.fieldOfInterest}
                         onChange={e => setNewLead({ ...newLead, fieldOfInterest: e.target.value as any })}
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                     >
-                        <optgroup label="Licence">
-                            <option value="Finance Digitale">Finance Digitale</option>
-                            <option value="Marketing Digital & E-commerce">Marketing Digital & E-commerce</option>
-                            <option value="Intelligence Artificielle & Génie Logiciel">Intelligence Artificielle & Génie Logiciel</option>
-                            <option value="Management de Projet Numérique">Management de Projet Numérique</option>
-                        </optgroup>
-                        <optgroup label="Master">
-                            <option value="Management de Projet & Transformation Digitale">Management de Projet & Transformation Digitale</option>
-                            <option value="Finance Digitale">Finance Digitale (Master)</option>
-                            <option value="Marketing Digital">Marketing Digital (Master)</option>
-                            <option value="Executive Master en Finance Digitale">Executive Master en Finance Digitale</option>
-                        </optgroup>
+                        <option value="Finance Digitale">Finance Digitale</option>
+                        <option value="Marketing Digital & E-commerce">Marketing Digital & E-commerce</option>
+                        <option value="Intelligence Artificielle & Génie Logiciel">Intelligence Artificielle & Génie Logiciel</option>
+                        <option value="Management de Projet Numérique">Management de Projet Numérique</option>
                         <option value="Autre">Autre</option>
                     </select>
+
                     <select
                         required
                         value={newLead.campaignId}
                         onChange={e => setNewLead({ ...newLead, campaignId: e.target.value })}
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                     >
-                        <option value="">Sélectionner une Campagne (Obligatoire)</option>
+                        <option value="">Campagne (Obligatoire)</option>
                         {campaigns.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                     </select>
-                    <input type="text" placeholder="Niveau (ex: Master 1)" required value={newLead.level} onChange={e => setNewLead({ ...newLead, level: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
-                    <div style={{ gridColumn: 'span 2' }}>
-                        <textarea placeholder="Notes additionnelles" value={newLead.notes} onChange={e => setNewLead({ ...newLead, notes: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', minHeight: '100px' }} />
-                    </div>
+
+                    <select
+                        required
+                        value={newLead.agentId}
+                        onChange={e => setNewLead({ ...newLead, agentId: e.target.value })}
+                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
+                    >
+                        <option value="">Conseiller (Obligatoire)</option>
+                        {agents.map(a => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                    </select>
+
+                    <input type="text" placeholder="Niveau d'étude" required value={newLead.level} onChange={e => setNewLead({ ...newLead, level: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2' }} />
+                    <textarea
+                        placeholder="Note / Commentaire sur le prospect..."
+                        value={newLead.note}
+                        onChange={e => setNewLead({ ...newLead, note: e.target.value })}
+                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2', minHeight: '100px', resize: 'vertical' }}
+                    />
+
                     <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', gridColumn: 'span 2' }}>
-                        <button type="button" onClick={onClose} className="btn" style={{ flex: 1, background: 'rgba(255, 255, 255, 0.05)', color: 'white' }}>
-                            Annuler
-                        </button>
-                        <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
-                            Ajouter le candidat
-                        </button>
+                        <button type="button" onClick={onClose} className="btn" style={{ flex: 1, background: 'rgba(255, 255, 255, 0.05)', color: 'white' }}>Annuler</button>
+                        <button type="submit" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>Ajouter</button>
                     </div>
                 </form>
             </div>

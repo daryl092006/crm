@@ -11,14 +11,14 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
     const { addToast } = useToast();
     const totalLeads = leads.length;
-    const inscritLeads = leads.filter(l => l.status === 'Inscrit').length;
+    const inscritLeads = leads.filter(l => l.statusId === 'inscrit').length;
     const convRate = totalLeads > 0 ? ((inscritLeads / totalLeads) * 100).toFixed(1) : '0';
 
     const stats = [
         { label: 'Total Prospects', value: totalLeads.toString(), icon: Users, color: 'var(--primary)' },
-        { label: 'Taux de Conversion', value: `${convRate}%`, icon: Target, color: 'var(--success)' },
-        { label: 'Campagnes Actives', value: campaigns.length.toString(), icon: GraduationCap, color: 'var(--accent)' },
-        { label: 'Dossiers Envoyés', value: leads.filter(l => l.status === 'Dossier envoyé').length.toString(), icon: PieChart, color: 'var(--warning)' },
+        { label: 'Taux de Conversion (Inscrits)', value: `${convRate}%`, icon: Target, color: 'var(--success)' },
+        { label: 'Campagnes Actives', value: campaigns.filter(c => c.isActive).length.toString(), icon: GraduationCap, color: 'var(--accent)' },
+        { label: 'Dossiers Envoyés', value: leads.filter(l => l.statusId === 'dossier_envoye').length.toString(), icon: PieChart, color: 'var(--warning)' },
     ];
 
     const exportToExcel = () => {
@@ -32,8 +32,7 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
             'Ville': l.city,
             'Filière': l.fieldOfInterest,
             'Niveau': l.level,
-            'Statut': l.status,
-            'Canal': l.source,
+            'Statut': l.status?.label || l.statusId,
             'Date Ajout': new Date(l.createdAt).toLocaleDateString()
         }));
 
@@ -45,11 +44,11 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
     };
 
     return (
-        <div>
+        <div className="animate-fade">
             <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                    <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Vue Décisionnelle</h1>
-                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Analyse des performances de recrutement pour la rentrée 2026.</p>
+                    <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Vue d'Ensemble</h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Analyse des performances de recrutement EliteCRM.</p>
                 </div>
                 <button onClick={exportToExcel} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Download size={18} /> Exporter Rapport Global
@@ -75,22 +74,22 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
                 <div className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Performance par Canal</h3>
+                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Répartition par Ville</h3>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        {['TikTok', 'Facebook', 'Salon', 'Agent'].map((canal) => {
-                            const count = leads.filter(l => l.source === canal).length;
+                        {Array.from(new Set(leads.map(l => l.city))).slice(0, 4).map((city) => {
+                            if (!city) return null;
+                            const count = leads.filter(l => l.city === city).length;
                             const percentage = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
-                            const colors: any = { 'TikTok': '#ff0050', 'Facebook': '#1877f2', 'Salon': 'var(--accent)', 'Agent': 'var(--primary)' };
 
                             return (
-                                <div key={canal}>
+                                <div key={city}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                                        <span style={{ fontWeight: 500 }}>{canal}</span>
+                                        <span style={{ fontWeight: 500 }}>{city}</span>
                                         <span style={{ color: 'var(--text-muted)' }}>{percentage}%</span>
                                     </div>
                                     <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
-                                        <div style={{ width: `${percentage}%`, height: '100%', background: colors[canal] || 'var(--primary)', borderRadius: '4px' }}></div>
+                                        <div style={{ width: `${percentage}%`, height: '100%', background: 'var(--primary)', borderRadius: '4px' }}></div>
                                     </div>
                                 </div>
                             );
@@ -99,22 +98,41 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
                 </div>
 
                 <div className="card">
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>Activité Recrutement</h3>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>Dernières Actions</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                        {leads.slice(0, 4).map((lead, i) => (
-                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--glass)', border: '1px solid var(--glass-border)', display: 'grid', placeItems: 'center' }}>
-                                    <GraduationCap size={20} color="var(--primary)" />
+                        {leads
+                            .flatMap(l => (l.interactions || []).map(i => ({ ...i, leadName: `${l.firstName} ${l.lastName}`, leadStatus: l.status })))
+                            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                            .slice(0, 4)
+                            .map((action, i) => (
+                                <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--glass)', border: '1px solid var(--glass-border)', display: 'grid', placeItems: 'center' }}>
+                                        <GraduationCap size={20} color="var(--primary)" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{action.leadName}</p>
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>
+                                            {action.content}
+                                        </p>
+                                    </div>
+                                    <div style={{
+                                        fontSize: '0.7rem',
+                                        color: action.leadStatus?.color || 'var(--text-muted)',
+                                        background: `${action.leadStatus?.color}11` || 'transparent',
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontWeight: 600
+                                    }}>
+                                        {new Date(action.createdAt).toLocaleDateString()}
+                                    </div>
                                 </div>
-                                <div style={{ flex: 1 }}>
-                                    <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{lead.firstName} {lead.lastName}</p>
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Inscrit en {lead.fieldOfInterest}</p>
-                                </div>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lead.status}</div>
-                            </div>
-                        ))}
+                            ))}
+                        {leads.every(l => !l.interactions?.length) && (
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>Aucune interaction récente.</p>
+                        )}
                     </div>
                 </div>
+
             </div>
         </div>
     );

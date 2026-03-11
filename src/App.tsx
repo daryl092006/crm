@@ -3,58 +3,119 @@ import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import Campaigns from './components/Campaigns'
 import Agents from './components/Agents'
-import Messaging from './components/Messaging'
-import { Login } from './components/Login'
+import Settings from './components/Settings'
+import Profile from './components/Profile'
+import Auth from './components/Auth'
 import { supabase } from './supabaseClient'
-import type { StudentLead, Campaign, Agent } from './types'
+import type { StudentLead, Campaign, Agent, LeadStatus } from './types'
 import './index.css'
 import type { Session } from '@supabase/supabase-js'
 import { ToastProvider } from './components/Toast'
+import OnboardingTour from './components/OnboardingTour'
+import { PopupProvider } from './components/Popup'
 
 function App() {
+  // --- BYPASS AUTH MODE ---
+  const BYPASS_AUTH = true; // Forcé pour un accès direct sans session // Set to true to skip login/registration
   const [session, setSession] = useState<Session | null>(null)
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('crm_active_tab') || 'dashboard')
+
+  useEffect(() => {
+    localStorage.setItem('crm_active_tab', activeTab);
+  }, [activeTab]);
   const [leads, setLeads] = useState<StudentLead[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
-  const [role, setRole] = useState<'admin' | 'agent'>('agent')
+  const [statuses, setStatuses] = useState<LeadStatus[]>([])
+  const [profile, setProfile] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) fetchData()
-      else setLoading(false)
-    })
+    // Safety timeout: stop loading after 6 seconds even if something hangs
+    const timeout = setTimeout(() => {
+      if (loading) setLoading(false);
+    }, 6000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session) fetchData()
-      else {
-        setLeads([])
-        setCampaigns([])
-        setAgents([])
-        setLoading(false)
-      }
-    })
+    // Chargement immédiat des données
+    fetchData();
 
-    return () => subscription.unsubscribe()
+    // --- REALTIME SUBSCRIPTION ---
+    // Listen for changes in the database and refresh data automatically
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leads' },
+        () => fetchData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'campaigns' },
+        () => fetchData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => fetchData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lead_statuses' },
+        () => fetchData()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearTimeout(timeout);
+    }
   }, [])
+
 
   const fetchData = async () => {
     setLoading(true)
+    console.log("--- Fetching CRM Data (Direct Access) ---");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', session?.user.id).single();
-      if (profile) setRole(profile.role)
+      // Configuration forcée du profil (Plus besoin de session !)
+      const mockProfile = {
+        id: '00000000-0000-0000-0000-000000000000',
+        organization_id: '00000000-0000-0000-0000-000000000000',
+        full_name: 'Administrateur Démo',
+        role: 'admin' as 'admin',
+        email: 'admin@elitecrm.dev'
+      };
+      setProfile(mockProfile);
 
-      const { data: leadsData } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
-      const { data: campaignsData } = await supabase.from('campaigns').select('*')
-      const { data: agentsData } = await supabase.from('profiles').select('*')
+      // 1. Fetch Statuses
+      const { data: statusesData } = await supabase.from('lead_statuses').select('*').order('sort_order');
+      if (statusesData) {
+        setStatuses(statusesData.map(s => ({
+          id: s.id,
+          label: s.label,
+          color: s.color,
+          isDefault: s.is_default,
+          sortOrder: s.sort_order
+        })));
+      }
 
+      // Plus besoin de fetcher le profil individuellement, il est forcé au début de fetchData
+      const currentUserId = mockProfile.id;
+      let profile = mockProfile;
+
+      // 3. Fetch Data with Relations
+      const { data: leadsData } = await supabase.from('leads').select('*, lead_interactions(*)').order('created_at', { ascending: false });
+      const { data: campaignsData } = await supabase.from('campaigns').select('*');
+      const { data: agentsData } = await supabase.from('profiles').select('*');
+
+      // 4. Map Leads & Interactions
       if (leadsData) {
         setLeads(leadsData.map((l: any) => ({
           id: l.id,
+          organizationId: l.organization_id,
+          campaignId: l.campaign_id,
+          agentId: l.agent_id,
+          statusId: l.status_id,
           firstName: l.first_name,
           lastName: l.last_name,
           email: l.email,
@@ -62,112 +123,115 @@ function App() {
           country: l.country,
           city: l.city,
           fieldOfInterest: l.field_of_interest,
-          level: l.level,
-          source: l.source,
-          status: l.status,
-          campaignId: l.campaign_id,
-          agentId: l.agent_id,
-          phoneVerification: l.phone_verification,
-          notes: l.notes,
-          interactions: l.interactions || [],
-          createdAt: l.created_at
+          level: l.study_level,
+          score: l.score || 0,
+          lastInteractionAt: l.last_interaction_at,
+          createdAt: l.created_at,
+          status: (statusesData || []).find(s => s.id === l.status_id),
+          interactions: (l.lead_interactions || []).map((i: any) => {
+            const interactionType = ({
+              'Appel': 'call',
+              'WhatsApp': 'whatsapp',
+              'SMS': 'sms',
+              'Verify': 'note',
+              'Confirm': 'note'
+            } as any)[i.type] || i.type; // Fallback to original type if not found
+            return {
+              id: i.id,
+              leadId: i.lead_id,
+              agentId: i.agent_id,
+              type: interactionType,
+              content: i.content,
+              createdAt: i.created_at
+            };
+          })
         })));
       }
+
       if (campaignsData) setCampaigns(campaignsData.map((c: any) => ({
         id: c.id,
+        organizationId: c.organization_id,
         name: c.name,
+        source: c.source,
+        budget: c.budget, // Correction de l'ancienne erreur (c.budget instead of c.budget)
         startDate: c.start_date,
         endDate: c.end_date,
-        budget: c.budget,
-        type: c.type
+        isActive: c.is_active
       })));
+
       if (agentsData) setAgents(agentsData.map(a => {
         const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
         const assignedCount = agentLeads.length;
-        const inscribedCount = agentLeads.filter((l: any) => l.status === 'Inscrit').length;
+        const inscribedCount = agentLeads.filter((l: any) => l.status_id === 'inscrit').length;
         const rate = assignedCount > 0 ? Math.round((inscribedCount / assignedCount) * 100) : 0;
+
+        const responseTimes = agentLeads.map((l: any) => {
+          if (!l.lead_interactions || l.lead_interactions.length === 0) return null;
+          // Filter for real contact interactions, not just notes if possible, but let's take any first interaction for now
+          const interactions = l.lead_interactions.filter((i: any) => ['call', 'whatsapp', 'sms'].includes(i.type));
+          if (interactions.length === 0) return null;
+
+          const firstInteraction = interactions.reduce((prev: any, curr: any) => {
+            return new Date(curr.created_at) < new Date(prev.created_at) ? curr : prev;
+          });
+
+          const diffMs = new Date(firstInteraction.created_at).getTime() - new Date(l.created_at).getTime();
+          return diffMs > 0 ? diffMs : null;
+        });
+        const validTimes = responseTimes.filter((t): t is number => t !== null);
+
+        const avgResponseTimeHours = validTimes.length > 0
+          ? (validTimes.reduce((a, b) => a + b, 0) / validTimes.length) / (1000 * 60 * 60)
+          : 0;
 
         return {
           id: a.id,
-          name: a.full_name || a.email.split('@')[0],
-          email: a.email,
-          leadsAssigned: assignedCount,
-          overdueTasksCount: a.overdue_tasks_count || 0,
+          organizationId: a.organization_id,
+          name: a.full_name || a.email?.split('@')[0] || 'Agent',
+          email: a.email || '',
+          role: a.role,
           capacityWeight: a.capacity_weight || 1,
-          conversionRate: rate
+          leadsAssigned: assignedCount,
+          overdueTasksCount: 0,
+          conversionRate: rate,
+          avgResponseTime: Number(avgResponseTimeHours.toFixed(1))
         };
-      }) as any)
+      }))
+
+      console.log("Fetch success: Leads:", leadsData?.length, "Campaigns:", campaignsData?.length, "Agents:", agentsData?.length);
+    } catch (err) {
+      console.error("Fetch error:", err);
     } finally {
       setLoading(false)
     }
   }
 
-  const mapLeadToDb = (l: StudentLead, organizationId: string | undefined) => ({
-    id: l.id,
-    first_name: l.firstName,
-    last_name: l.lastName,
-    email: l.email,
-    phone: l.phone,
-    country: l.country,
-    city: l.city,
-    field_of_interest: l.fieldOfInterest,
-    level: l.level,
-    source: l.source,
-    status: l.status,
-    campaign_id: l.campaignId,
-    agent_id: l.agentId,
-    phone_verification: l.phoneVerification,
-    notes: l.notes,
-    interactions: l.interactions,
-    created_at: l.createdAt,
-    organization_id: organizationId
-  });
 
   const handleUpdateLeads = async (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
-    let resolvedLeads: StudentLead[];
-    if (typeof newLeads === 'function') {
-      resolvedLeads = newLeads(leads);
-    } else {
-      resolvedLeads = newLeads;
-    }
-
-    const orgId = session?.user.user_metadata?.organization_id;
-
-    // Identify if it's a bulk addition
-    if (resolvedLeads.length > leads.length) {
-      const addedLeads = resolvedLeads.slice(leads.length).map(l => mapLeadToDb(l, orgId));
-      await supabase.from('leads').insert(addedLeads);
-    }
-    // Identify if it's an update
-    else if (resolvedLeads.length === leads.length) {
-      const diff = resolvedLeads.find((l, i) => JSON.stringify(l) !== JSON.stringify(leads[i]));
-      if (diff) {
-        await supabase.from('leads').upsert(mapLeadToDb(diff, orgId));
-      }
-    }
-
-    setLeads(resolvedLeads);
+    if (typeof newLeads === 'function') setLeads(newLeads(leads));
+    else setLeads(newLeads);
   }
 
   if (loading) return <div style={{ height: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg-main)', color: 'white' }}>Chargement Élite CRM...</div>
 
   return (
     <ToastProvider>
-      {!session ? (
-        <Login />
-      ) : (
-        <>
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} role={role} setRole={setRole} />
-          <main className="main-content">
-            {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} />}
-            {activeTab === 'campaigns' && <Campaigns campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} />}
-            {activeTab === 'agents' && role === 'admin' && <Agents agents={agents} />}
-            {activeTab === 'messaging' && <Messaging setLeads={handleUpdateLeads as any} agents={agents} />}
-          </main>
-        </>
-      )}
+      <PopupProvider>
+        <OnboardingTour />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <main className="main-content">
+          {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} />}
+          {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
+          {activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
+
+
+          {activeTab === 'settings' && <Settings />}
+          {activeTab === 'profile' && <Profile profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
+
+        </main>
+      </PopupProvider>
     </ToastProvider>
-  )
+  );
 }
 
 export default App

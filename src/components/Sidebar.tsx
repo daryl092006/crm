@@ -4,7 +4,6 @@ import {
     LayoutDashboard,
     Target,
 
-    MessageSquare,
     UserSquare2,
     Settings,
     LogOut
@@ -13,16 +12,13 @@ import {
 interface SidebarProps {
     activeTab: string;
     setActiveTab: (tab: string) => void;
-    role: 'admin' | 'agent';
-    setRole: (role: 'admin' | 'agent') => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, role, setRole }) => {
-    const menuItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
+    const menuItems: { id: string; label: string; icon: any }[] = [
+        { id: 'dashboard', label: 'Tableau de Bord', icon: LayoutDashboard },
         { id: 'campaigns', label: 'Campagnes', icon: Target },
-        ...(role === 'admin' ? [{ id: 'agents', label: 'Équipe / Agents', icon: UserSquare2 }] : []),
-        { id: 'messaging', label: 'Messagerie', icon: MessageSquare },
+        { id: 'agents', label: 'Conseillers', icon: UserSquare2 },
     ];
 
     return (
@@ -46,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, role, setRol
                 {menuItems.map((item) => (
                     <button
                         key={item.id}
+                        id={`tour - ${item.id} `}
                         onClick={() => setActiveTab(item.id)}
                         style={{
                             display: 'flex',
@@ -69,36 +66,46 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, role, setRol
             </nav>
 
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '1rem 0', borderTop: '1px solid var(--border)' }}>
-                <div style={{ marginBottom: '1rem', padding: '0 1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Mode Actuel :</div>
-                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px' }}>
-                        <button
-                            onClick={() => setRole('agent')}
-                            style={{ flex: 1, border: 'none', background: role === 'agent' ? 'var(--primary)' : 'transparent', color: role === 'agent' ? 'white' : 'var(--text-muted)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
-                        >
-                            Agent
-                        </button>
-                        <button
-                            onClick={() => setRole('admin')}
-                            style={{ flex: 1, border: 'none', background: role === 'admin' ? 'var(--primary)' : 'transparent', color: role === 'admin' ? 'white' : 'var(--text-muted)', borderRadius: '6px', padding: '4px', fontSize: '0.75rem', cursor: 'pointer' }}
-                        >
-                            Admin
-                        </button>
-                    </div>
+                <div style={{ padding: '0 1rem', marginBottom: '1rem' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Elite CRM v2.0</div>
                 </div>
 
                 <button
-                    onClick={() => alert('Paramètres bientôt disponibles')}
+                    onClick={() => setActiveTab('profile')}
+                    id="tour-profile"
                     style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.75rem',
                         padding: '0.75rem 1rem',
                         border: 'none',
-                        background: 'transparent',
-                        color: 'var(--text-muted)',
+                        background: activeTab === 'profile' ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
+                        color: activeTab === 'profile' ? 'var(--primary)' : 'var(--text-muted)',
                         cursor: 'pointer',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
+                        transition: 'all 0.2s',
+                        fontWeight: activeTab === 'profile' ? 600 : 400,
+                    }}
+                >
+                    <UserSquare2 size={20} />
+                    <span style={{ fontSize: '0.925rem' }}>Mon Profil</span>
+                </button>
+
+                <button
+                    onClick={() => setActiveTab('settings')}
+                    id="tour-settings"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        padding: '0.75rem 1rem',
+                        border: 'none',
+                        background: activeTab === 'settings' ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
+                        color: activeTab === 'settings' ? 'var(--primary)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        borderRadius: '12px',
+                        transition: 'all 0.2s',
+                        fontWeight: activeTab === 'settings' ? 600 : 400,
                     }}
                 >
                     <Settings size={20} />

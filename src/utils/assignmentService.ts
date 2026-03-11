@@ -13,9 +13,9 @@ export const getBestAgentForLead = (agents: Agent[], leads: StudentLead[]): Agen
     const agentsWithOpenLeads = agents.map(agent => {
         const openLeadsCount = leads.filter(lead =>
             lead.agentId === agent.id &&
-            lead.status !== 'Inscrit' &&
-            lead.status !== 'Perdu' &&
-            lead.status !== 'Faux Numéro'
+            lead.statusId !== 'inscrit' &&
+            lead.statusId !== 'perdu' &&
+            lead.statusId !== 'faux_numero'
         ).length;
 
         return {

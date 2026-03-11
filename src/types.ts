@@ -1,8 +1,35 @@
-export type LeadStatus = 'Nouveau' | 'Contacté' | 'Intéressé' | 'Dossier envoyé' | 'Dossier reçu' | 'Inscrit' | 'Perdu' | 'Faux Numéro';
+export interface LeadStatus {
+    id: string;
+    label: string;
+    color: string;
+    isDefault?: boolean;
+    sortOrder: number;
+}
+
+export type InteractionType = 'note' | 'whatsapp' | 'email' | 'call' | 'sms' | 'status_change';
+
+export interface Interaction {
+    id: string;
+    leadId: string;
+    agentId?: string;
+    type: InteractionType;
+    content: string;
+    createdAt: string;
+}
+
+export interface Task {
+    id: string;
+    leadId: string;
+    agentId: string;
+    title: string;
+    dueDate: string;
+    isCompleted: boolean;
+    priority: 'low' | 'medium' | 'high';
+}
 
 export type LeadSource = 'Facebook' | 'TikTok' | 'Instagram' | 'Salon' | 'Référencement' | 'Agent' | 'Importation' | 'Autre';
 
-export type FilePath =
+export type StudyField =
     | 'Finance Digitale'
     | 'Marketing Digital & E-commerce'
     | 'Intelligence Artificielle & Génie Logiciel'
@@ -12,50 +39,75 @@ export type FilePath =
     | 'Executive Master en Finance Digitale'
     | 'Autre';
 
-export interface Interaction {
-    id: string;
-    type: 'Note' | 'Email' | 'WhatsApp' | 'SMS' | 'Appel';
-    content: string;
-    date: string;
-    agentName: string;
-}
-
 export interface StudentLead {
     id: string;
+    organizationId: string;
+    campaignId: string;
+    agentId?: string;
+    statusId: string;
+
     firstName: string;
     lastName: string;
     phone: string;
     email: string;
-    country: string;
     city: string;
-    fieldOfInterest: FilePath;
-    level: string; // e.g., Licence 1, Master 2
-    source: LeadSource;
-    status: LeadStatus;
-    campaignId: string;
-    agentId?: string;
-    phoneVerification?: 'Inconnu' | 'Valide' | 'Invalide' | 'WhatsApp';
-    notes: string;
-    interactions: Interaction[];
+    country: string;
+    fieldOfInterest: StudyField;
+    level: string;
+
+    score: number;
+    notes?: string;
+    lastInteractionAt: string;
     createdAt: string;
+
+    // Virtual fields (dynamically loaded)
+    status?: LeadStatus;
+    interactions?: Interaction[];
+    tasks?: Task[];
 }
 
 export interface Campaign {
     id: string;
+    organizationId: string;
     name: string;
+    source: string;
+    budget?: number;
     startDate: string;
     endDate?: string;
-    budget?: number;
-    type: 'Social' | 'Salon' | 'General';
+    isActive: boolean;
 }
 
 export interface Agent {
     id: string;
+    organizationId: string;
     name: string;
     email: string;
-    avatar?: string;
+    role: 'admin' | 'agent';
+    capacityWeight: number;
+    avatarUrl?: string;
+    // Metrics calculated from leads
     leadsAssigned: number;
     overdueTasksCount: number;
-    capacityWeight: number; // 1 = Junior, 2 = Standard, 3 = Senior/Elite
     conversionRate: number;
+    avgResponseTime?: number; // In hours
 }
+
+export interface Template {
+    id: string;
+    organizationId: string;
+    title: string;
+    content: string;
+    category: 'whatsapp' | 'email' | 'sms';
+    createdAt: string;
+}
+
+export interface Sequence {
+    id: string;
+    organizationId: string;
+    name: string;
+    isActive: boolean;
+    createdAt: string;
+    stepsCount?: number;
+    activeLeadsCount?: number;
+}
+
