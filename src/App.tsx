@@ -81,7 +81,7 @@ function App() {
       const mockProfile = {
         id: '00000000-0000-0000-0000-000000000000',
         organization_id: '00000000-0000-0000-0000-000000000000',
-        full_name: 'Administrateur Démo',
+        full_name: 'Direction / Système',
         role: 'admin' as 'admin',
         email: 'admin@elitecrm.dev'
       };
@@ -159,7 +159,7 @@ function App() {
         isActive: c.is_active
       })));
 
-      if (agentsData) setAgents(agentsData.map(a => {
+      if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000').map(a => {
         const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
         const assignedCount = agentLeads.length;
         const inscribedCount = agentLeads.filter((l: any) => l.status_id === 'inscrit').length;

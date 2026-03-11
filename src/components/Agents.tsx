@@ -75,7 +75,12 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                         <div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Agent Top Performance</p>
                             <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>
-                                {agents.length > 0 ? [...agents].sort((a, b) => b.conversionRate - a.conversionRate)[0].name : 'Aucun agent'}
+                                {(() => {
+                                    if (agents.length === 0) return 'Aucun agent';
+                                    const topAgent = [...agents].sort((a, b) => b.conversionRate - a.conversionRate)[0];
+                                    if (topAgent && topAgent.conversionRate > 0) return topAgent.name;
+                                    return 'À définir';
+                                })()}
                             </h3>
                         </div>
                         <Award size={24} color="#ffd700" />

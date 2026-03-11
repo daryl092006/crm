@@ -272,9 +272,9 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
         addToast("Modèle d'importation téléchargé.", "info");
     };
 
-    if (selectedCampaignId) {
-        const campaign = campaigns.find(c => c.id === selectedCampaignId);
-        if (!campaign) return null;
+    const campaign = selectedCampaignId ? campaigns.find(c => c.id === selectedCampaignId) : null;
+
+    if (selectedCampaignId && campaign) {
         const campaignLeads = leads.filter(l => l.campaignId === campaign.id);
 
         return (
