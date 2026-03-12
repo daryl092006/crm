@@ -3,11 +3,12 @@ import { Phone, MessageCircle, X } from 'lucide-react';
 
 interface CommunicationCenterProps {
     phone: string;
+    label?: string;
     status?: 'Inconnu' | 'Valide' | 'Invalide' | 'WhatsApp';
     onAction?: (type: 'Appel' | 'WhatsApp' | 'SMS' | 'Verify' | 'Confirm') => void;
 }
 
-const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, status = 'Inconnu', onAction }) => {
+const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label, status = 'Inconnu', onAction }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -77,19 +78,21 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, status
                 style={{
                     background: 'none',
                     border: 'none',
-                    color: getStatusColor(),
+                    color: label ? 'var(--text-main)' : getStatusColor(),
+                    fontWeight: label ? 600 : 400,
+                    fontSize: label ? '0.875rem' : 'inherit',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '4px',
+                    padding: label ? '4px 8px' : '4px',
                     borderRadius: '4px',
                     transition: 'background 0.2s'
                 }}
                 onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                 onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
             >
-                <Phone size={14} />
+                {label || <Phone size={14} />}
                 {status !== 'Inconnu' && (
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: getStatusColor() }} />
                 )}

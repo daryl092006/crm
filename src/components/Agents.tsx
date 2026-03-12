@@ -193,6 +193,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 campaigns={campaigns}
                 profile={profile}
                 statuses={statuses}
+                agents={agents}
                 onClose={() => setSelectedAgent(null)}
             />
 

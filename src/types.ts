@@ -57,6 +57,7 @@ export interface StudentLead {
 
     score: number;
     notes?: string;
+    metadata?: Record<string, any>;
     lastInteractionAt: string;
     createdAt: string;
 
@@ -75,6 +76,7 @@ export interface Campaign {
     startDate: string;
     endDate?: string;
     isActive: boolean;
+    column_mappings?: { field: string; label: string }[];
 }
 
 export interface Agent {

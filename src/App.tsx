@@ -5,19 +5,15 @@ import Campaigns from './components/Campaigns'
 import Agents from './components/Agents'
 import Settings from './components/Settings'
 import Profile from './components/Profile'
-import Auth from './components/Auth'
 import { supabase } from './supabaseClient'
 import type { StudentLead, Campaign, Agent, LeadStatus } from './types'
 import './index.css'
-import type { Session } from '@supabase/supabase-js'
 import { ToastProvider } from './components/Toast'
 import OnboardingTour from './components/OnboardingTour'
 import { PopupProvider } from './components/Popup'
 
 function App() {
   // --- BYPASS AUTH MODE ---
-  const BYPASS_AUTH = true; // Forcé pour un accès direct sans session // Set to true to skip login/registration
-  const [session, setSession] = useState<Session | null>(null)
   const [activeTab, setActiveTab] = useState(localStorage.getItem('crm_active_tab') || 'dashboard')
 
   useEffect(() => {
@@ -99,10 +95,6 @@ function App() {
         })));
       }
 
-      // Plus besoin de fetcher le profil individuellement, il est forcé au début de fetchData
-      const currentUserId = mockProfile.id;
-      let profile = mockProfile;
-
       // 3. Fetch Data with Relations
       const { data: leadsData } = await supabase.from('leads').select('*, lead_interactions(*)').order('created_at', { ascending: false });
       const { data: campaignsData } = await supabase.from('campaigns').select('*');
@@ -125,6 +117,8 @@ function App() {
           fieldOfInterest: l.field_of_interest,
           level: l.study_level,
           score: l.score || 0,
+          notes: l.notes,
+          metadata: l.metadata,
           lastInteractionAt: l.last_interaction_at,
           createdAt: l.created_at,
           status: (statusesData || []).find(s => s.id === l.status_id),
@@ -156,7 +150,8 @@ function App() {
         budget: c.budget, // Correction de l'ancienne erreur (c.budget instead of c.budget)
         startDate: c.start_date,
         endDate: c.end_date,
-        isActive: c.is_active
+        isActive: c.is_active,
+        column_mappings: c.column_mappings
       })));
 
       if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000').map(a => {
@@ -212,7 +207,18 @@ function App() {
     else setLeads(newLeads);
   }
 
-  if (loading) return <div style={{ height: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg-main)', color: 'white' }}>Chargement Élite CRM...</div>
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loader-container">
+          <div className="loader-rings"></div>
+          <div className="loader-rings"></div>
+          <div className="loader-rings"></div>
+        </div>
+        <div className="loading-text">Elite CRM</div>
+      </div>
+    );
+  }
 
   return (
     <ToastProvider>

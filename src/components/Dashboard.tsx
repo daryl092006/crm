@@ -2,6 +2,9 @@ import { Users, GraduationCap, Target, PieChart, Download } from 'lucide-react';
 import type { StudentLead, Campaign } from '../types';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
+import { useState } from 'react';
+import LeadExportModal from './LeadExportModal';
+
 
 interface DashboardProps {
     leads: StudentLead[];
@@ -10,6 +13,8 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
     const { addToast } = useToast();
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
     const totalLeads = leads.length;
     const inscritLeads = leads.filter(l => l.statusId === 'inscrit').length;
     const convRate = totalLeads > 0 ? ((inscritLeads / totalLeads) * 100).toFixed(1) : '0';
@@ -21,27 +26,45 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
         { label: 'Dossiers Envoyés', value: leads.filter(l => l.statusId === 'dossier_envoye').length.toString(), icon: PieChart, color: 'var(--warning)' },
     ];
 
-    const exportToExcel = () => {
-        const dataToExport = leads.map(l => ({
-            'ID': l.id,
-            'Prénom': l.firstName,
-            'Nom': l.lastName,
-            'Email': l.email,
-            'Téléphone': l.phone,
-            'Pays': l.country,
-            'Ville': l.city,
-            'Filière': l.fieldOfInterest,
-            'Niveau': l.level,
-            'Statut': l.status?.label || l.statusId,
-            'Date Ajout': new Date(l.createdAt).toLocaleDateString()
-        }));
+    const handleExport = (selectedColumns: string[]) => {
+        const columnMap: Record<string, string> = {
+            'firstName': 'Prénom',
+            'lastName': 'Nom',
+            'email': 'Email',
+            'phone': 'Téléphone',
+            'country': 'Pays',
+            'city': 'Ville',
+            'fieldOfInterest': 'Filière',
+            'level': 'Niveau',
+            'statusId': 'Statut',
+            'notes': 'Notes',
+            'score': 'Score',
+            'createdAt': 'Date Ajout'
+        };
+
+        const dataToExport = leads.map(l => {
+            const row: Record<string, any> = {};
+            selectedColumns.forEach(colId => {
+                const label = columnMap[colId] || colId;
+                if (colId === 'statusId') {
+                    row[label] = l.status?.label || l.statusId;
+                } else if (colId === 'createdAt') {
+                    row[label] = new Date(l.createdAt).toLocaleDateString();
+                } else {
+                    row[label] = (l as any)[colId];
+                }
+            });
+            return row;
+        });
 
         const worksheet = XLSX.utils.json_to_sheet(dataToExport);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Rapport Global");
         XLSX.writeFile(workbook, `rapport_crm_${new Date().toISOString().split('T')[0]}.xlsx`);
         addToast("Rapport global exporté avec succès !", "success");
+        setIsExportModalOpen(false);
     };
+
 
     return (
         <div className="animate-fade">
@@ -50,9 +73,10 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
                     <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Vue d'Ensemble</h1>
                     <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Analyse des performances de recrutement EliteCRM.</p>
                 </div>
-                <button onClick={exportToExcel} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button onClick={() => setIsExportModalOpen(true)} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Download size={18} /> Exporter Rapport Global
                 </button>
+
             </div>
 
             <div className="stat-grid">
@@ -134,8 +158,14 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
                 </div>
 
             </div>
+            <LeadExportModal 
+                isOpen={isExportModalOpen} 
+                onClose={() => setIsExportModalOpen(false)}
+                onExport={handleExport}
+            />
         </div>
     );
 };
 
 export default Dashboard;
+
