@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { X, Clock, Target, CheckCircle2, Mail, Download, Edit2 } from 'lucide-react';
-import type { Agent, Campaign } from '../types';
+import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown } from 'lucide-react';
+import type { Agent } from '../types';
 import CommunicationCenter from './CommunicationCenter';
 import { supabase } from '../supabaseClient';
-import Pipeline from './Pipeline';
-import LeadExportModal from './LeadExportModal';
+// import removed
 import { usePopup } from './Popup';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
+import OutcomeModal from './OutcomeModal';
 
 
 interface AgentStatsModalProps {
@@ -15,417 +15,695 @@ interface AgentStatsModalProps {
     leads: any[];
     setLeads: React.Dispatch<React.SetStateAction<any[]>>;
     statuses: any[];
-    campaigns: Campaign[];
     agents: Agent[];
-    profile: any;
     onClose: () => void;
 }
 
-const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, campaigns, agents, profile, onClose }) => {
+// --- CONFIGURATION DE RÉFÉRENCE NATIONALE (ULTRA-PRÉCISE) ---
+const COUNTRIES_DB = [
+    { id: '221', name: 'Sénégal', keywords: ['SENEGAL', 'SEN', 'SN', 'DAKAR', 'THIES', 'SAINT-LOUIS'] },
+    { id: '225', name: 'Côte d\'Ivoire', keywords: ['COTE D IVOIRE', 'COTE D\'IVOIRE', 'IVORY COAST', 'CI', 'ABIDJAN', 'YAMOUSSOUKRO'] },
+    { id: '243', name: 'RDC', keywords: ['RDC', 'REPUBLIQUE DEMOCRATIQUE DU CONGO', 'CONGO KINSHASA', 'KINSHASA', 'ZAIRE', 'CONGO K', 'COD'] },
+    { id: '242', name: 'Congo-Brazzaville', keywords: ['CONGO BRAZZA', 'CONGO-BRAZZAVILLE', 'REPUBLIQUE DU CONGO', 'BRAZZAVILLE', 'COG', 'CONGO B'] },
+    { id: '212', name: 'Maroc', keywords: ['MAROC', 'MOROCCO', 'MAR', 'CASABLANCA', 'RABAT', 'MARRAKECH'] },
+    { id: '33', name: 'France', keywords: ['FRANCE', 'FR', 'FRA', 'PARIS'] },
+    { id: '237', name: 'Cameroun', keywords: ['CAMEROUN', 'CAMEROON', 'CMR', 'DOUALA', 'YAOUNDE'] },
+    { id: '241', name: 'Gabon', keywords: ['GABON', 'LIBREVILLE', 'GAB'] },
+    { id: '223', name: 'Mali', keywords: ['MALI', 'BAMAKO', 'MLI'] },
+    { id: '224', name: 'Guinée', keywords: ['GUINEE', 'CONAKRY', 'GUINEA'] },
+    { id: '228', name: 'Togo', keywords: ['TOGO', 'LOME', 'TG'] },
+    { id: '229', name: 'Bénin', keywords: ['BENIN', 'COTONOU', 'BJ'] },
+    { id: '226', name: 'Burkina Faso', keywords: ['BURKINA', 'OUAGADOUGOU', 'BF'] },
+    { id: '227', name: 'Niger', keywords: ['NIGER', 'NIAMEY', 'NE'] },
+    { id: '222', name: 'Mauritanie', keywords: ['MAURITANIE', 'NOUAKCHOTT', 'MR'] },
+    { id: '235', name: 'Tchad', keywords: ['TCHAD', 'CHAD', 'NDJAMENA', 'TD'] },
+    { id: '216', name: 'Tunisie', keywords: ['TUNISIE', 'TUNISIA'] },
+    { id: '213', name: 'Algérie', keywords: ['ALGERIE', 'ALGERIA'] }
+];
+
+const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, onClose }) => {
     const { addToast } = useToast();
-    const { showConfirm, showPrompt } = usePopup();
-    const [viewMode, setViewMode] = useState<'list' | 'pipeline'>('list');
-    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const { showPrompt, showConfirm } = usePopup();
+    const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
+    const [isHarmonizing, setIsHarmonizing] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterCountry, setFilterCountry] = useState('all');
+    const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+    const [isReassigning, setIsReassigning] = useState(false);
+    const [showReassignDropdown, setShowReassignDropdown] = useState(false);
+
+    // MOTEUR DE DÉTECTION SÉCURISÉ (ULTRA-PUISSANT)
+    const findCountryInfo = (countryStr: string, phoneStr: string) => {
+        let p = (phoneStr || '').replace(/\D/g, '');
+        if (p.startsWith('00')) p = p.substring(2);
+        const c = (countryStr || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+        // 1. PRIORITÉ : Détection par le numéro (+INDICATIF gagne toujours)
+        const sortedCountries = [...COUNTRIES_DB].sort((a, b) => b.id.length - a.id.length);
+        for (const country of sortedCountries) {
+            if (p.startsWith(country.id)) return country;
+        }
+
+        // 2. SECONDAIRE : Détection par texte s'il n'y a pas d'indicatif dans le numéro
+        for (const country of COUNTRIES_DB) {
+            if (country.keywords.some(k => c === k || (c.length > 2 && c.includes(k)))) {
+                return country;
+            }
+        }
+
+        return null;
+    };
+
+    const formatIntelligentPhone = (phone: string, countryInfo: any) => {
+        if (!phone || phone === 'N/A') return phone;
+        
+        let digits = phone.replace(/\D/g, '');
+        if (digits.startsWith('00')) digits = digits.substring(2);
+
+        const allPrefixes = COUNTRIES_DB.map(c => c.id).sort((a,b) => b.length - a.length);
+
+        // --- MACHINE À DÉCAPER (ANTI-EMPILEMENT) ---
+        // Si le numéro est anormalement long (> 13 chiffres)
+        if (digits.length > 13) {
+            for (const p1 of allPrefixes) {
+                if (digits.startsWith(p1)) {
+                    const rest = digits.substring(p1.length);
+                    // On vérifie si ce qui suit commence AUSSI par un indicatif (ex: 242 suivi de 243)
+                    for (const p2 of allPrefixes) {
+                        if (rest.startsWith(p2)) {
+                            digits = rest; // On retire la "croûte" (le faux préfixe p1)
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (countryInfo) {
+            const prefix = countryInfo.id;
+            
+            // Protection anti-doublon simple (ex: 229229)
+            if (digits.startsWith(prefix + prefix)) digits = digits.substring(prefix.length);
+
+            if (digits.startsWith(prefix)) return '+' + digits;
+            if (digits.startsWith('0')) return '+' + prefix + digits.substring(1);
+            return '+' + prefix + digits;
+        }
+
+        return phone.startsWith('+') ? phone : '+' + digits;
+    };
 
 
     if (!agent) return null;
 
-    const handleUpdateStatus = async (leadId: string, newStatusId: string) => {
-        // Optimistic update
-        const newStatus = statuses.find(s => s.id === newStatusId);
-        setLeads((prev: any[]) => prev.map(lead =>
-            lead.id === leadId ? { ...lead, statusId: newStatusId, status: newStatus } : lead
-        ));
+    // --- LOGIQUE DE DONNÉES STRICTE ---
+    const totalLeads = leads.length;
+    
+    const contactedLeadsCount = leads.filter(l => {
+        const sid = (l.statusId || '').toLowerCase();
+        return sid !== 'nouveau' && sid !== '';
+    }).length;
 
-        const { error } = await supabase.from('leads').update({ status_id: newStatusId }).eq('id', leadId);
-        if (error) {
-            addToast(error.message, "error");
-        }
+    const nonContactedCount = totalLeads - contactedLeadsCount;
+    
+    const pasReponduCount = leads.filter(l => {
+        const sid = (l.statusId || '').toLowerCase();
+        return sid.includes('injoignable') || sid.includes('repondeur') || sid.includes('non_repondu');
+    }).length;
+
+    const reachedLeadsCount = contactedLeadsCount - pasReponduCount;
+    
+    const inscribedLeadsCount = leads.filter(l => 
+        ['admis', 'inscrit', 'finalise'].some(k => (l.statusId || '').toLowerCase().includes(k))
+    ).length;
+    
+    const conversionRate = reachedLeadsCount > 0 ? Math.round((inscribedLeadsCount / reachedLeadsCount) * 100) : 0;
+    const contactRate = totalLeads > 0 ? Math.round((contactedLeadsCount / totalLeads) * 100) : 0;
+    const avgScore = totalLeads > 0 ? Math.round(leads.reduce((acc, curr) => acc + (curr.score || 0), 0) / totalLeads) : 0;
+
+    const fieldCounts = leads.reduce((acc: any, curr) => {
+        const field = curr.fieldOfInterest || 'Non spécifié';
+        acc[field] = (acc[field] || 0) + 1;
+        return acc;
+    }, {});
+    const topFields = Object.entries(fieldCounts).sort(([, a]: any, [, b]: any) => b - a).slice(0, 3);
+
+    const handleUpdateStatus = async (leadId: string, newStatusId: string) => {
+        const lead = leads.find(l => l.id === leadId);
+        if (!lead) return;
+        const sid = newStatusId.toLowerCase();
+        const isDialogue = !['nouveau', 'injoignable', 'repondeur', 'faux_numero'].some(k => sid.includes(k));
+        const newMetadata = { ...(lead.metadata || {}), everReached: lead.metadata?.everReached || isDialogue };
+        const newStatus = statuses.find(s => s.id === newStatusId);
+        setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
+        await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
     };
 
     const handleEditNote = async (leadId: string, currentNote: string) => {
-        const newPart = await showPrompt(
-            "Ajouter une note",
-            "Saisissez votre nouveau message (le plus récent apparaîtra en haut)",
-            ""
-        );
-
-        if (newPart !== null && newPart.trim() !== "") {
-            const now = new Date();
-            const months = ['janv.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-            const timestamp = `${now.getDate()} ${months[now.getMonth()]}, ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-            
-            const appendedNote = currentNote 
-                ? `[${timestamp}] ${newPart}\n──────────────\n${currentNote}`
-                : `[${timestamp}] ${newPart}`;
-
-            const { error } = await supabase
-                .from('leads')
-                .update({ notes: appendedNote })
-                .eq('id', leadId);
-
-            if (error) {
-                addToast("Erreur lors de la mise à jour de la note : " + error.message, "error");
-            } else {
-                setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, notes: appendedNote } : l));
-                addToast("Note ajoutée", "success");
-            }
-        }
-    };
-
-    const handleSetPhoneStatus = async (leadId: string, currentMetadata: any, status: boolean | string | undefined) => {
-        const newMetadata = { ...(currentMetadata || {}), hasWhatsApp: status };
-
-        const { error } = await supabase
-            .from('leads')
-            .update({ metadata: newMetadata })
-            .eq('id', leadId);
-
-        if (error) {
-            addToast("Erreur lors de la mise à jour du statut : " + error.message, "error");
-        } else {
-            setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, metadata: newMetadata } : l));
-            addToast(`Statut mis à jour`, "info");
-        }
-    };
-
-    const handleReassignAgent = async (leadId: string, newAgentId: string) => {
-        const confirmed = await showConfirm(
-            "Réassignation",
-            "Êtes-vous sûr de vouloir transférer ce prospect à un autre conseiller ?",
-            "info"
-        );
-
-        if (confirmed) {
-            setLeads((prev: any[]) => prev.map(lead =>
-                lead.id === leadId ? { ...lead, agentId: newAgentId } : lead
-            ));
-
-            const { error } = await supabase.from('leads').update({ agent_id: newAgentId }).eq('id', leadId);
-            if (error) {
-                addToast("Erreur lors de la réassignation : " + error.message, "error");
-            } else {
-                addToast("Prospect réassigné avec succès.", "success");
-            }
+        const newPart = await showPrompt("Note", "Saisissez votre message...", "");
+        if (newPart?.trim()) {
+            const timestamp = `${new Date().getDate()}/${new Date().getMonth()+1}`;
+            const appendedNote = currentNote ? `[${timestamp}] ${newPart}\n──────────────\n${currentNote}` : `[${timestamp}] ${newPart}`;
+            await supabase.from('leads').update({ notes: appendedNote }).eq( 'id', leadId);
+            setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, notes: appendedNote } : l));
+            addToast("Note ajoutée", "success");
         }
     };
 
     const handleExport = (selectedColumns: string[]) => {
         if (!agent) return;
 
-        const columnMap: Record<string, string> = {
-            'firstName': 'Prénom',
-            'lastName': 'Nom',
-            'email': 'Email',
-            'phone': 'Téléphone',
+        // LOGIQUE : Priorité à la sélection, sinon on prend le filtrage actuel
+        let leadsToExport = [];
+        
+        if (selectedLeadIds.length > 0) {
+            leadsToExport = leads.filter(l => selectedLeadIds.includes(l.id));
+        } else {
+            leadsToExport = leads.filter(l => {
+                const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
+                const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
+                const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
+                return matchesSearch && matchesStatus && matchesCountry;
+            });
+        }
+
+        const columnMap: Record<string, string> = { 
+            'firstName': 'Prénom', 
+            'lastName': 'Nom', 
+            'email': 'Email', 
+            'phone': 'Téléphone', 
             'country': 'Pays',
-            'city': 'Ville',
+            'statusId': 'Statut', 
             'fieldOfInterest': 'Filière',
-            'level': 'Niveau',
-            'statusId': 'Statut',
-            'notes': 'Notes',
             'score': 'Score',
-            'createdAt': 'Date Ajout'
+            'notes': 'Notes'
         };
 
-        const dataToExport = leads.map(l => {
+        const data = leadsToExport.map(l => {
             const row: Record<string, any> = {};
-            selectedColumns.forEach(colId => {
-                const label = columnMap[colId] || colId;
-                if (colId === 'statusId') {
-                    row[label] = l.status?.label || l.statusId;
-                } else if (colId === 'createdAt') {
-                    row[label] = new Date(l.createdAt).toLocaleDateString();
-                } else {
-                    row[label] = (l as any)[colId];
-                }
+            const countryInfo = findCountryInfo(l.country, l.phone);
+            const intelligentPhone = formatIntelligentPhone(l.phone, countryInfo);
+
+            selectedColumns.forEach(id => {
+                let val = (l as any)[id];
+                if (id === 'statusId') val = l.status?.label || l.statusId;
+                if (id === 'phone') val = intelligentPhone;
+                if (id === 'country') val = countryInfo ? countryInfo.name : l.country;
+                row[columnMap[id] || id] = val;
             });
             return row;
         });
 
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Mes Prospects");
-        XLSX.writeFile(workbook, `prospects_${agent.name}_${new Date().toISOString().split('T')[0]}.xlsx`);
-        addToast("Prospects exportés avec succès !", "success");
-        setIsExportModalOpen(false);
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Prospects");
+        XLSX.writeFile(wb, `Export_${agent.name.replace(/\s+/g, '_')}_${new Date().toLocaleDateString()}.xlsx`);
+        addToast(`${leadsToExport.length} prospects exportés.`, "success");
     };
 
+    const getPhaseLabel = (lead: any) => {
+        const sid = (lead.statusId || '').toLowerCase();
+        if (['admis', 'inscrit', 'abandon', 'report', 'decision', 'finalise'].some(k => sid.includes(k))) return 'Décision';
+        if (['dossier', 'candidat'].some(k => sid.includes(k))) return 'Candidature';
+        if (['info', 'whatsapp', 'brochure', 'rdv', 'visite', 'reunion'].some(k => sid.includes(k))) return 'Information';
+        return 'Qualification';
+    };
+
+    const handleBulkAssign = async (targetAgentId: string) => {
+        if (selectedLeadIds.length === 0) return;
+        
+        const confirmed = await showConfirm(
+            "Réattribution de masse",
+            `Voulez-vous vraiment réattribuer ${selectedLeadIds.length} prospects ?`
+        );
+        if (!confirmed) return;
+
+        setIsReassigning(true);
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ agent_id: targetAgentId })
+                .in('id', selectedLeadIds);
+
+            if (error) throw error;
+
+            setLeads((prev: any[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
+            addToast(`${selectedLeadIds.length} prospects réattribués avec succès !`, "success");
+            setSelectedLeadIds([]);
+            setShowReassignDropdown(false);
+        } catch (error) {
+            addToast("Erreur lors de la réattribution.", "error");
+        } finally {
+            setIsReassigning(false);
+        }
+    };
+
+    const handleSelectAll = (filteredLeads: any[]) => {
+        if (selectedLeadIds.length === filteredLeads.length) {
+            setSelectedLeadIds([]);
+        } else {
+            setSelectedLeadIds(filteredLeads.map(l => l.id));
+        }
+    };
+
+    const toggleLeadSelection = (leadId: string) => {
+        setSelectedLeadIds(prev => prev.includes(leadId) ? prev.filter(id => id !== leadId) : [...prev, leadId]);
+    };
+
+    const handleMassHarmonize = async () => {
+        const confirmed = await showConfirm(
+            "Nettoyage IA & Mise à jour des Statuts", 
+            `L'Assistant IA va :\n1. Fusionner les fiches en double (même numéro)\n2. Corriger les pays via les indicatifs et villes\n3. Migrer les anciens statuts vers la nouvelle structure\n\nContinuer le nettoyage profond ?`
+        );
+        
+        if (!confirmed) return;
+
+        setIsHarmonizing(true);
+        let updatedCount = 0;
+        let mergedCount = 0;
+        const seenPhones = new Map<string, string>(); // phone -> firstLeadId
+
+        try {
+            // ÉTAPE 1 : RÉPARER ET DÉTECTER LES DOUBLONS
+            for (const lead of leads) {
+                const countryInfo = findCountryInfo(lead.country, lead.phone);
+                const standardizedCountry = countryInfo ? countryInfo.name : lead.country;
+                const formattedPhone = formatIntelligentPhone(lead.phone, countryInfo);
+                const cleanKey = formattedPhone.replace(/\D/g, '');
+
+                // GESTION DES DOUBLONS (Logique GPT)
+                if (cleanKey && cleanKey.length > 5) {
+                    if (seenPhones.has(cleanKey)) {
+                        // C'est un doublon ! On supprime la fiche actuelle et on garde la première
+                        await supabase.from('leads').delete().eq('id', lead.id);
+                        mergedCount++;
+                        continue;
+                    }
+                    seenPhones.set(cleanKey, lead.id);
+                }
+                
+                const updates: any = {};
+                let hasChanges = false;
+
+                if (formattedPhone !== lead.phone && formattedPhone !== 'N/A') {
+                    updates.phone = formattedPhone;
+                    hasChanges = true;
+                }
+
+                if (standardizedCountry !== lead.country) {
+                    updates.country = standardizedCountry;
+                    hasChanges = true;
+                }
+
+                if (hasChanges) {
+                    await supabase.from('leads').update(updates).eq('id', lead.id);
+                    updatedCount++;
+                }
+            }
+            addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés.`, "success");
+            if (onClose) onClose(); // Rafraîchir
+        } catch (error) {
+            console.error(error);
+            addToast("Erreur lors du nettoyage profond.", "error");
+        } finally {
+            setIsHarmonizing(false);
+        }
+    };
 
     return (
-        <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.8)',
-            backdropFilter: 'blur(8px)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 1000,
-            padding: '2rem'
-        }} onClick={onClose}>
-            <div className="card" style={{ width: '100%', maxWidth: '90vw', maxHeight: '95vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{
-                            width: '48px',
-                            height: '48px',
-                            borderRadius: '50%',
-                            background: 'var(--primary)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontWeight: 700,
-                            color: 'white',
-                            fontSize: '1.25rem'
-                        }}>
-                            {agent.name.split(' ').map((n: any) => n[0]).join('')}
-                        </div>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: '1.5rem' }} onClick={onClose}>
+            <div className="card" style={{ width: '100%', maxWidth: '98vw', maxHeight: '96vh', overflowY: 'auto', background: '#0a0b0d', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.1)' }} onClick={e => e.stopPropagation()}>
+                
+                <div style={{ padding: '2rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                        <div style={{ width: '74px', height: '74px', borderRadius: '22px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: any) => n[0]).join('') : '?'}</div>
                         <div>
-                            <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Espace Conseiller : {agent.name}</h2>
-                            <p style={{ color: 'var(--text-muted)' }}>Gérez vos prospects et suivez vos performances en direct.</p>
+                            <h2 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Centre de Performance : {agent?.name || 'Inconnu'}</h2>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '1.125rem' }}>Vue stratégique 360° • Statistiques en temps réel</p>
                         </div>
                     </div>
-                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                        <X size={24} />
-                    </button>
+
+                    <button onClick={onClose} style={{ width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={30} /></button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2.5rem' }}>
-                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                            <Target size={16} /> Volume Assigné
-                        </div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{agent.leadsAssigned}</div>
+                <div style={{ padding: '2.5rem 3rem' }}>
+                    
+                    {/* LES 5 INDICATEURS MAÎTRES */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1.5rem', marginBottom: '3rem' }}>
+                        {[
+                            { label: 'Inscrits', color: 'var(--success)', icon: <CheckCircle2 size={24} />, count: inscribedLeadsCount, detail: 'Résultat final' },
+                            { label: 'Pas Répondu', color: '#f59e0b', icon: <PhoneOff size={24} />, count: pasReponduCount, detail: 'Appels sans réponse' },
+                            { label: 'Contactés', color: '#10b981', icon: <UserCheck size={24} />, count: contactedLeadsCount, detail: 'Statut ≠ Nouveau' },
+                            { label: 'Non Contactés', color: '#ef4444', icon: <Zap size={24} />, count: nonContactedCount, detail: 'Statut = Nouveau' },
+                            { label: 'Total Dossiers', color: 'var(--primary)', icon: <Users size={24} />, count: totalLeads, detail: 'Portefeuille total' }
+                        ].map((s, i) => (
+                            <div key={i} style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', borderRadius: '28px', border: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
+                                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', color: s.color, fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '1rem' }}>{s.icon} {s.label}</div>
+                                <div style={{ fontSize: '3rem', fontWeight: 950, color: 'white', lineHeight: 1 }}>{s.count}</div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '10px', fontWeight: 500 }}>{s.detail}</div>
+                            </div>
+                        ))}
                     </div>
-                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--success)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                            <CheckCircle2 size={16} /> Taux de Conv.
-                        </div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--success)' }}>{agent.conversionRate}%</div>
-                    </div>
-                    <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--danger)', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                            <Clock size={16} /> Tâches
-                        </div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--danger)' }}>{agent.overdueTasksCount}</div>
-                    </div>
-                </div>
 
-                <div style={{ marginTop: '1rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                        <h3 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Mes Prospects Assignés ({leads.length})</h3>
-                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                            <button 
-                                onClick={() => setIsExportModalOpen(true)} 
-                                className="btn" 
-                                style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}
-                            >
-                                <Download size={16} /> Exporter
-                            </button>
-                            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: '4px', borderRadius: '8px' }}>
-                                <button onClick={() => setViewMode('list')} className={`btn ${viewMode === 'list' ? 'btn-primary' : ''}`} style={{ padding: '4px 12px', fontSize: '0.8125rem' }}>Liste</button>
-                                <button onClick={() => setViewMode('pipeline')} className={`btn ${viewMode === 'pipeline' ? 'btn-primary' : ''}`} style={{ padding: '4px 12px', fontSize: '0.8125rem' }}>Pipeline</button>
+                    {/* ANALYTICS COMPLEXE */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', marginBottom: '3.5rem' }}>
+                        
+                        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '32px', padding: '2.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem' }}>
+                                <Activity size={24} color="var(--primary)" />
+                                <h3 style={{ fontSize: '1.75rem', fontWeight: 900 }}>Analyse de l'efficacité</h3>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Taux de Conversion</div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--success)' }}>{conversionRate}<span style={{fontSize: '1rem'}}>%</span></div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Inscrits / Réel parlé</div>
+                                    <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', marginTop: '15px' }}>
+                                        <div style={{ height: '100%', width: `${conversionRate}%`, background: 'var(--success)', borderRadius: '3px' }}></div>
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Taux de Contact</div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--accent)' }}>{contactRate}<span style={{fontSize: '1rem'}}>%</span></div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Contactés / Total</div>
+                                    <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', marginTop: '15px' }}>
+                                        <div style={{ height: '100%', width: `${contactRate}%`, background: 'var(--accent)', borderRadius: '3px' }}></div>
+                                    </div>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Score Moyen</div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--warning)' }}>{avgScore}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Moyenne qualité</div>
+                                    <Award size={16} color="var(--warning)" style={{ marginTop: '10px' }} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '32px', padding: '2.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
+                                <PieChart size={24} color="var(--accent)" />
+                                <h3 style={{ fontSize: '1.5rem', fontWeight: 900 }}>Top Filières</h3>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                {topFields.map(([field, count]: any, i) => (
+                                    <div key={i}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '0.5rem' }}>
+                                            <span style={{ fontWeight: 800 }}>{field}</span>
+                                            <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>{count}</span>
+                                        </div>
+                                        <div style={{ height: '10px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '5px' }}>
+                                            <div style={{ height: '100%', width: `${totalLeads > 0 ? (count/totalLeads)*100 : 0}%`, background: i === 0 ? 'var(--primary)' : i === 1 ? 'var(--accent)' : 'var(--warning)', borderRadius: '5px' }}></div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
 
+                    {/* DÉTAIL DYNAMIQUE */}
+                    <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ padding: '14px', background: 'rgba(99, 102, 241, 0.15)', borderRadius: '18px' }}><Users size={28} color="var(--primary)" /></div>
+                                <h3 style={{ fontSize: '2rem', fontWeight: 950 }}>Registre des Prospects</h3>
+                            </div>
+                            
+                            {/* Filtres Intelligents */}
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
+                                    <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Rechercher par nom, email, tél..." 
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="input" 
+                                        style={{ paddingLeft: '45px', width: '100%', borderRadius: '14px', height: '45px' }} 
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <div style={{ position: 'relative' }}>
+                                        <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                        <select 
+                                            value={filterStatus}
+                                            onChange={(e) => setFilterStatus(e.target.value)}
+                                            className="input" 
+                                            style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
+                                        >
+                                            <option value="all">Tous les Statuts</option>
+                                            {statuses.filter(s => ['nouveau', 'interesse', 'rdv_planifie', 'dossier_recu', 'admis', 'inscrit', 'pas_interesse', 'hors_cible', 'injoignable'].includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div style={{ position: 'relative' }}>
+                                        <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                        <select 
+                                            value={filterCountry}
+                                            onChange={(e) => setFilterCountry(e.target.value)}
+                                            className="input" 
+                                            style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
+                                        >
+                                            <option value="all">Tous les Pays</option>
+                                            {Array.from(new Set(leads.map(l => l.country).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 10px', color: 'var(--primary)', fontWeight: 800, fontSize: '0.85rem' }}>
+                                    {leads.filter(l => {
+                                        const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
+                                        const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
+                                        const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
+                                        return matchesSearch && matchesStatus && matchesCountry;
+                                    }).length} prospects trouvés
+                                </div>
+                            </div>
 
-                    {viewMode === 'list' ? (
-                        <div className="card" style={{ padding: 0, background: 'rgba(255,255,255,0.01)', overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button 
+                                    onClick={handleMassHarmonize} 
+                                    disabled={isHarmonizing}
+                                    className="btn" 
+                                    style={{ 
+                                        padding: '0.9rem 2rem', 
+                                        borderRadius: '18px', 
+                                        fontSize: '0.9rem', 
+                                        fontWeight: 800, 
+                                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1))',
+                                        color: '#a855f7',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        border: '1px solid rgba(168, 85, 247, 0.2)',
+                                        boxShadow: '0 0 15px rgba(168, 85, 247, 0.1)'
+                                    }}
+                                >
+                                    <Sparkles size={16} className={isHarmonizing ? 'animate-spin' : ''} />
+                                    {isHarmonizing ? 'Analyse IA...' : 'Assistant IA'}
+                                </button>
+                                <button 
+                                    onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])} 
+                                    className="btn btn-primary" 
+                                    style={{ padding: '0.9rem 2.5rem', borderRadius: '18px', fontSize: '1rem', fontWeight: 900 }}
+                                >
+                                    Exporter XLS
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.01)', borderRadius: '36px', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
-                                    <tr>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Prospect</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Numéro</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Statut / Gestion</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Conseiller</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Statut Numéro</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Notes (Historique)</th>
-                                        <th style={{ padding: '1rem', textAlign: 'left', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Date</th>
+                                <thead>
+                                    <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                                        <th style={{ padding: '1.75rem', width: '50px' }}>
+                                            <button 
+                                                onClick={() => {
+                                                    const filteredItems = leads.filter(l => {
+                                                        const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
+                                                        const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
+                                                        const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
+                                                        return matchesSearch && matchesStatus && matchesCountry;
+                                                    });
+                                                    handleSelectAll(filteredItems);
+                                                }}
+                                                style={{ background: 'transparent', border: 'none', color: selectedLeadIds.length > 0 ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
+                                            >
+                                                {selectedLeadIds.length > 0 ? <CheckSquare size={22} /> : <Square size={22} />}
+                                            </button>
+                                        </th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Prospect</th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Contact & Pays</th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Statut CRM</th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Modification Statut</th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 800 }}>Score</th>
+                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Dernière Note</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {leads.length > 0 ? leads.map((lead: any) => (
-                                        <tr key={lead.id} style={{ borderTop: '1px solid var(--border)' }}>
-                                            <td style={{ padding: '1rem' }}>
-                                                <div style={{ fontWeight: 600 }}>{lead.firstName} {lead.lastName}</div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', gap: '8px' }}>
-                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Mail size={12} /> {lead.email}</span>
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: '1rem' }}>
-                                                <CommunicationCenter
-                                                    phone={lead.phone}
-                                                    label={lead.phone || 'N/A'}
-                                                    onAction={async (type: any) => {
-                                                        const interactionType = ({
-                                                            'Appel': 'call',
-                                                            'WhatsApp': 'whatsapp',
-                                                            'SMS': 'sms',
-                                                            'Verify': 'note',
-                                                            'Confirm': 'note'
-                                                        } as any)[type];
-                                                        await supabase.from('lead_interactions').insert({
-                                                            lead_id: lead.id,
-                                                            agent_id: lead.agentId,
-                                                            type: interactionType || 'note',
-                                                            content: `Action depuis l'espace conseiller: ${type}`
-                                                        });
-                                                    }}
-                                                />
-                                            </td>
-                                            <td style={{ padding: '1rem' }}>
-                                                <select
-                                                    value={lead.statusId}
-                                                    onChange={(e) => handleUpdateStatus(lead.id, e.target.value)}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        borderRadius: '6px',
-                                                        background: 'rgba(255,255,255,0.05)',
-                                                        border: '1px solid var(--border)',
-                                                        color: 'white',
-                                                        fontSize: '0.75rem',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                >
-                                                    {statuses
-                                                        .filter(s => !s.label.toLowerCase().includes('faux'))
-                                                        .map((s: any) => (
-                                                            <option key={s.id} value={s.id} style={{ background: '#1a1b1e' }}>{s.label}</option>
-                                                        ))}
-                                                </select>
-                                            </td>
-                                            <td style={{ padding: '1rem' }}>
-                                                <select
-                                                    value={lead.agentId}
-                                                    onChange={(e) => handleReassignAgent(lead.id, e.target.value)}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        borderRadius: '6px',
-                                                        background: 'rgba(255,255,255,0.05)',
-                                                        border: '1px solid var(--border)',
-                                                        color: 'white',
-                                                        fontSize: '0.75rem',
-                                                        cursor: 'pointer',
-                                                        maxWidth: '120px'
-                                                    }}
-                                                >
-                                                    {agents.map((a: Agent) => (
-                                                        <option key={a.id} value={a.id} style={{ background: '#1a1b1e' }}>{a.name}</option>
-                                                    ))}
-                                                </select>
-                                            </td>
-                                            <td style={{ padding: '1rem' }}>
-                                                <select
-                                                    value={lead.metadata?.hasWhatsApp === undefined ? 'none' : String(lead.metadata?.hasWhatsApp)}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        const status = val === 'true' ? true : val === 'false' ? false : val === 'wrong' ? 'wrong' : undefined;
-                                                        handleSetPhoneStatus(lead.id, lead.metadata, status);
-                                                    }}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        borderRadius: '6px',
-                                                        background: lead.metadata?.hasWhatsApp === true 
-                                                            ? 'rgba(34, 197, 94, 0.1)' 
-                                                            : lead.metadata?.hasWhatsApp === false 
-                                                                ? 'rgba(239, 68, 68, 0.1)' 
-                                                                : lead.metadata?.hasWhatsApp === 'wrong'
-                                                                    ? 'rgba(249, 115, 22, 0.1)'
-                                                                    : 'rgba(255, 255, 255, 0.05)',
-                                                        color: lead.metadata?.hasWhatsApp === true 
-                                                            ? '#22c55e' 
-                                                            : lead.metadata?.hasWhatsApp === false 
-                                                                ? '#ef4444' 
-                                                                : lead.metadata?.hasWhatsApp === 'wrong'
-                                                                    ? '#f97316'
-                                                                    : 'var(--text-muted)',
-                                                        border: '1px solid var(--border)',
-                                                        fontSize: '0.75rem',
-                                                        cursor: 'pointer',
-                                                        outline: 'none',
-                                                        fontWeight: 600
-                                                    }}
-                                                >
-                                                    <option value="none" style={{ background: '#1a1b1e', color: 'var(--text-muted)' }}>Vérifier</option>
-                                                    <option value="true" style={{ background: '#1a1b1e', color: '#22c55e' }}>WhatsApp</option>
-                                                    <option value="false" style={{ background: '#1a1b1e', color: '#ef4444' }}>Pas WA</option>
-                                                    <option value="wrong" style={{ background: '#1a1b1e', color: '#f97316' }}>Faux Numéro</option>
-                                                </select>
-                                            </td>
-                                            <td style={{ padding: '1rem', minWidth: '200px' }}>
-                                                <div 
-                                                    onClick={() => handleEditNote(lead.id, lead.notes || '')}
-                                                    style={{ 
-                                                        fontSize: '0.75rem', 
-                                                        color: lead.notes ? 'var(--text-main)' : 'var(--text-muted)',
-                                                        cursor: 'pointer',
-                                                        background: lead.notes ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-                                                        padding: lead.notes ? '8px' : '0',
-                                                        borderRadius: '8px',
-                                                        border: lead.notes ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-                                                        maxWidth: '300px',
-                                                        maxHeight: '80px',
-                                                        overflowY: 'auto',
-                                                        whiteSpace: 'pre-wrap',
-                                                        lineHeight: '1.4'
-                                                    }}
-                                                    title={lead.notes || "Ajouter une note"}
-                                                >
-                                                    {lead.notes ? (
-                                                        <div style={{ position: 'relative' }}>
-                                                            {lead.notes.split('\n──────────────\n')[0]}
-                                                            {lead.notes.includes('\n──────────────\n') && (
-                                                                <div style={{ marginTop: '4px', fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600 }}>
-                                                                    + Historique...
-                                                                </div>
-                                                            )}
+                                    {([...leads]
+                                        .filter(l => {
+                                            const matchesSearch = 
+                                                (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                (l.phone || '').includes(searchQuery);
+                                            const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
+                                            const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
+                                            return matchesSearch && matchesStatus && matchesCountry;
+                                        })
+                                        .sort((a,b) => (b.score || 0) - (a.score || 0)))
+                                        .map((lead: any) => {
+                                        const phase = getPhaseLabel(lead);
+                                        const countryInfo = findCountryInfo(lead.country, lead.phone);
+                                        const intelligentPhone = formatIntelligentPhone(lead.phone, countryInfo);
+                                        const sid = (lead.statusId || '').toLowerCase();
+                                        const isFailed = (sid.includes('injoignable') || sid.includes('repondeur'));
+                                        
+                                        return (
+                                            <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.2s', background: selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className="hover-row">
+                                                <td style={{ padding: '1.75rem', textAlign: 'center' }}>
+                                                    <button 
+                                                        onClick={() => toggleLeadSelection(lead.id)}
+                                                        style={{ background: 'transparent', border: 'none', color: selectedLeadIds.includes(lead.id) ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
+                                                    >
+                                                        {selectedLeadIds.includes(lead.id) ? <CheckSquare size={22} /> : <Square size={22} />}
+                                                    </button>
+                                                </td>
+                                                <td style={{ padding: '1.75rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                                        <div style={{ fontWeight: 900, fontSize: '1.25rem' }}>{lead.firstName} {lead.lastName}</div>
+                                                        {lead.metadata?.everReached && <div style={{ fontSize: '0.7rem', background: 'rgba(34, 197, 94, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontWeight: 900 }}>Contact OK</div>}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>{lead.email}</div>
+                                                </td>
+                                                <td style={{ padding: '1.75rem' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <CommunicationCenter 
+                                                            phone={intelligentPhone} 
+                                                            label={intelligentPhone} 
+                                                            onAction={(type) => { if (type === 'Appel' || type === 'WhatsApp') setSelectedLeadForOutcome(lead); }} 
+                                                        />
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                           📍 {countryInfo ? countryInfo.name : (lead.country || 'Pays inconnu')}
                                                         </div>
-                                                    ) : (
-                                                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                            <Edit2 size={12} /> Ajouter une note
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td style={{ padding: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                                {new Date(lead.createdAt).toLocaleDateString()}
-                                            </td>
-                                        </tr>
-                                    )) : (
-                                        <tr>
-                                            <td colSpan={4} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                                                Aucun prospect assigné actuellement.
-                                            </td>
-                                        </tr>
-                                    )}
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: '1.75rem' }}>
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>{phase}</div>
+                                                    <div style={{ fontWeight: 800, fontSize: '1.125rem' }}>{lead.status?.label || lead.statusId}</div>
+                                                </td>
+                                                <td style={{ padding: '1.75rem' }}>
+                                                    <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
+                                                        {statuses.filter(s => ['nouveau', 'interesse', 'rdv_planifie', 'dossier_recu', 'admis', 'inscrit', 'pas_interesse', 'hors_cible', 'injoignable'].includes(s.id)).map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td style={{ padding: '1.75rem', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
+                                                </td>
+                                                <td style={{ padding: '1.75rem' }}>
+                                                    <div onClick={() => handleEditNote(lead.id, lead.notes || '')} style={{ fontSize: '0.875rem', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.1)', height: '60px', overflowY: 'auto' }}>
+                                                        {lead.notes ? lead.notes.substring(0, 40) + "..." : "+ Note"}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
-                    ) : (
-                        <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', overflowX: 'auto' }}>
-                            <Pipeline
-                                leads={leads}
-                                agents={[agent as any]}
-                                statuses={statuses}
-                                profile={profile}
-                                setLeads={setLeads}
-                                campaigns={campaigns}
-                            />
+                    </div>
+                </div>
+
+                <div style={{ padding: '2.5rem 3.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)' }}>
+                    <button className="btn btn-primary" style={{ padding: '1.25rem 4rem', borderRadius: '20px', fontWeight: 950, fontSize: '1.125rem' }} onClick={onClose}>Fermer le Management</button>
+                    
+                    {/* BARRE D'ACTION BULK (FLOTTANTE ET FIXE POUR VISIBILITÉ) */}
+                    {selectedLeadIds.length > 0 && (
+                        <div style={{ 
+                            position: 'fixed', 
+                            bottom: '40px', 
+                            left: '50%', 
+                            transform: 'translateX(-50%)', 
+                            background: 'var(--primary)', 
+                            padding: '16px 32px', 
+                            borderRadius: '24px', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '24px', 
+                            boxShadow: '0 20px 60px rgba(99, 102, 241, 0.6)', 
+                            zIndex: 2000, 
+                            border: '1px solid rgba(255,255,255,0.3)',
+                            animation: 'slideUp 0.3s ease-out'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'white', color: 'var(--primary)', display: 'grid', placeItems: 'center', fontWeight: 950, fontSize: '1rem' }}>{selectedLeadIds.length}</div>
+                                <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'white' }}>Sélectionné(s)</span>
+                            </div>
+                            
+                            <div style={{ height: '30px', width: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
+                            
+                            <div style={{ position: 'relative' }}>
+                                <button 
+                                    onClick={() => setShowReassignDropdown(!showReassignDropdown)}
+                                    className="btn" 
+                                    disabled={isReassigning}
+                                    style={{ 
+                                        background: 'white', 
+                                        color: 'black', 
+                                        borderRadius: '16px', 
+                                        padding: '12px 24px', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: '12px', 
+                                        fontWeight: 900, 
+                                        fontSize: '1rem',
+                                        boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {isReassigning ? <Activity className="animate-spin" size={20} /> : <UserPlus size={20} />}
+                                    {isReassigning ? 'Transfert...' : 'Lancer le transfert'} <ChevronDown size={14} />
+                                </button>
+                                
+                                {showReassignDropdown && (
+                                    <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '20px', width: '300px', background: '#1a1b1e', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 25px 50px rgba(0,0,0,0.7)', overflow: 'hidden' }}>
+                                        <div style={{ padding: '14px 20px', fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choisir le destinataire</div>
+                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                            {agents.filter(a => a.id !== agent?.id).map(a => (
+                                                <button 
+                                                    key={a.id} 
+                                                    onClick={() => handleBulkAssign(a.id)}
+                                                    style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: 'none', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
+                                                    className="reassign-option"
+                                                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                                                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                                >
+                                                    <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', fontSize: '1rem', display: 'grid', placeItems: 'center', fontWeight: 900 }}>{a.name[0]}</div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontWeight: 750, fontSize: '1rem' }}>{a.name}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.leadsAssigned} prospects en cours</div>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div style={{ padding: '15px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                            <button 
+                                                style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', border: 'none', borderRadius: '15px', color: 'white', fontWeight: 950, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4)' }}
+                                                onClick={() => addToast("L'IA balance la charge de travail...", "info")}
+                                            >
+                                                <Sparkles size={18} /> IA Smart Balance
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <button onClick={() => setSelectedLeadIds([])} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', width: '36px', height: '36px', borderRadius: '50%', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}><X size={20} /></button>
                         </div>
                     )}
                 </div>
 
-                <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-primary" onClick={onClose}>Fermer l'espace conseiller</button>
-                </div>
-
-                <LeadExportModal 
-                    isOpen={isExportModalOpen} 
-                    onClose={() => setIsExportModalOpen(false)}
-                    onExport={handleExport}
-                />
+                <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} />
             </div>
-
         </div>
     );
 };

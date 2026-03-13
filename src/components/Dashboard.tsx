@@ -1,4 +1,4 @@
-import { Users, GraduationCap, Target, PieChart, Download } from 'lucide-react';
+import { GraduationCap, Target, PieChart, Download, Users, TrendingUp } from 'lucide-react';
 import type { StudentLead, Campaign } from '../types';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
@@ -11,19 +11,35 @@ interface DashboardProps {
     campaigns: Campaign[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
+const Dashboard: React.FC<DashboardProps> = ({ leads }) => {
     const { addToast } = useToast();
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
     const totalLeads = leads.length;
-    const inscritLeads = leads.filter(l => l.statusId === 'inscrit').length;
+    const inscritLeads = leads.filter(l => l.statusId === 'inscrit' || l.statusId === 'inscription_confirmee').length;
     const convRate = totalLeads > 0 ? ((inscritLeads / totalLeads) * 100).toFixed(1) : '0';
+
+    // Unified Phase categorization logic
+    const getPhaseLeads = (keywords: string[]) => 
+        leads.filter(l => keywords.some(k => (l.statusId || '').toLowerCase().includes(k) || (l.status?.label || '').toLowerCase().includes(k)));
+
+    const qualificationLeads = getPhaseLeads(['nouveau', 'contacte', 'interesse', 'rappel', 'refus', 'perdu', 'injoignable', 'faux', 'hors']);
+    const informationLeads = getPhaseLeads(['info', 'whatsapp', 'brochure', 'rdv', 'visite', 'reunion']);
+    const candidatureLeads = getPhaseLeads(['dossier', 'candidat']);
+    const admissionLeads = getPhaseLeads(['admis', 'inscrit', 'abandon', 'report', 'decision', 'finalise']);
 
     const stats = [
         { label: 'Total Prospects', value: totalLeads.toString(), icon: Users, color: 'var(--primary)' },
-        { label: 'Taux de Conversion (Inscrits)', value: `${convRate}%`, icon: Target, color: 'var(--success)' },
-        { label: 'Campagnes Actives', value: campaigns.filter(c => c.isActive).length.toString(), icon: GraduationCap, color: 'var(--accent)' },
-        { label: 'Dossiers Envoyés', value: leads.filter(l => l.statusId === 'dossier_envoye').length.toString(), icon: PieChart, color: 'var(--warning)' },
+        { label: 'En Qualification', value: qualificationLeads.length.toString(), icon: Target, color: 'var(--warning)' },
+        { label: 'Dossiers Candidats', value: candidatureLeads.length.toString(), icon: PieChart, color: 'var(--accent)' },
+        { label: 'Taux de Conversion Admission', value: `${convRate}%`, icon: GraduationCap, color: 'var(--success)' },
+    ];
+
+    const phases = [
+        { name: "Qualification", count: qualificationLeads.length, color: 'var(--warning)' },
+        { name: "Information", count: informationLeads.length, color: 'var(--accent)' },
+        { name: "Candidature", count: candidatureLeads.length, color: 'var(--primary)' },
+        { name: "Décision & Inscriptions", count: admissionLeads.length, color: 'var(--success)' },
     ];
 
     const handleExport = (selectedColumns: string[]) => {
@@ -70,8 +86,8 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
         <div className="animate-fade">
             <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                    <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Vue d'Ensemble</h1>
-                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Analyse des performances de recrutement EliteCRM.</p>
+                    <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Tableau de Bord Université</h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Suivi du tunnel de recrutement et des inscriptions.</p>
                 </div>
                 <button onClick={() => setIsExportModalOpen(true)} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Download size={18} /> Exporter Rapport Global
@@ -79,7 +95,7 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
 
             </div>
 
-            <div className="stat-grid">
+            <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '2rem' }}>
                 {stats.map((stat, index) => (
                     <div key={index} className="card" style={{ position: 'relative', overflow: 'hidden' }}>
                         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -95,21 +111,57 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
                 ))}
             </div>
 
+            <div className="card" style={{ marginBottom: '2rem' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1.5rem' }}>Tunnel de Recrutement (Phases)</h3>
+                <div style={{ display: 'flex', gap: '8px', height: '60px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(255,255,255,0.02)', padding: '4px' }}>
+                    {phases.map((phase, i) => {
+                        const width = totalLeads > 0 ? (phase.count / totalLeads) * 100 : 25;
+                        return (
+                            <div key={phase.name} style={{ 
+                                width: `${width}%`, 
+                                background: phase.color, 
+                                opacity: 0.8,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minWidth: '80px',
+                                transition: 'all 0.5s ease',
+                                borderRadius: i === 0 ? '8px 4px 4px 8px' : i === phases.length - 1 ? '4px 8px 8px 4px' : '4px',
+                                position: 'relative'
+                            }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'rgba(0,0,0,0.6)' }}>{phase.count}</div>
+                                    <div style={{ fontSize: '0.65rem', fontWeight: 700, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase' }}>{phase.name}</div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', padding: '0 0.5rem' }}>
+                    {phases.map(p => (
+                        <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: p.color }}></div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{p.name}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
                 <div className="card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Répartition par Ville</h3>
+                        <h3 style={{ fontSize: '1.125rem', fontWeight: 700 }}>Répartition par Filière</h3>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        {Array.from(new Set(leads.map(l => l.city))).slice(0, 4).map((city) => {
-                            if (!city) return null;
-                            const count = leads.filter(l => l.city === city).length;
+                        {Array.from(new Set(leads.map(l => l.fieldOfInterest))).slice(0, 5).map((field) => {
+                            if (!field) return null;
+                            const count = leads.filter(l => l.fieldOfInterest === field).length;
                             const percentage = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
 
                             return (
-                                <div key={city}>
+                                <div key={field}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                                        <span style={{ fontWeight: 500 }}>{city}</span>
+                                        <span style={{ fontWeight: 500 }}>{field}</span>
                                         <span style={{ color: 'var(--text-muted)' }}>{percentage}%</span>
                                     </div>
                                     <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
@@ -122,37 +174,31 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns }) => {
                 </div>
 
                 <div className="card">
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>Dernières Actions</h3>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>Activités de Scoring Récentes</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                         {leads
-                            .flatMap(l => (l.interactions || []).map(i => ({ ...i, leadName: `${l.firstName} ${l.lastName}`, leadStatus: l.status })))
+                            .filter(l => (l.interactions || []).some(i => i.content.includes('Score')))
+                            .flatMap(l => (l.interactions || []).filter(i => i.content.includes('Score')).map(i => ({ ...i, leadName: `${l.firstName} ${l.lastName}`, leadStatus: l.status })))
                             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                             .slice(0, 4)
                             .map((action, i) => (
                                 <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'var(--glass)', border: '1px solid var(--glass-border)', display: 'grid', placeItems: 'center' }}>
-                                        <GraduationCap size={20} color="var(--primary)" />
+                                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', display: 'grid', placeItems: 'center' }}>
+                                        <TrendingUp size={20} color="var(--success)" />
                                     </div>
                                     <div style={{ flex: 1 }}>
-                                        <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{action.leadName}</p>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{action.leadName}</p>
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 700 }}>+{action.content.split('+')[1]}</span>
+                                        </div>
                                         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>
-                                            {action.content}
+                                            {action.content.split('.')[0]}
                                         </p>
-                                    </div>
-                                    <div style={{
-                                        fontSize: '0.7rem',
-                                        color: action.leadStatus?.color || 'var(--text-muted)',
-                                        background: `${action.leadStatus?.color}11` || 'transparent',
-                                        padding: '4px 8px',
-                                        borderRadius: '6px',
-                                        fontWeight: 600
-                                    }}>
-                                        {new Date(action.createdAt).toLocaleDateString()}
                                     </div>
                                 </div>
                             ))}
-                        {leads.every(l => !l.interactions?.length) && (
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>Aucune interaction récente.</p>
+                        {leads.every(l => !l.interactions?.some(i => i.content.includes('Score'))) && (
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center' }}>Aucun scoring récent.</p>
                         )}
                     </div>
                 </div>

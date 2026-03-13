@@ -12,7 +12,8 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
-    const formattedPhone = phone.replace(/\s+/g, '').replace(/^\+/, '');
+    const normalizedDigits = phone.replace(/\D/g, ''); // Uniquement les chiffres pour WhatsApp
+    const fullInternational = phone.startsWith('+') ? phone : `+${phone}`; // Format complet avec +
 
     const getStatusColor = () => {
         switch (status) {
@@ -24,8 +25,7 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
     };
 
     const handleVerifySync = () => {
-        // Opens WhatsApp for manual probing
-        window.open(`https://wa.me/${formattedPhone}`, '_blank');
+        window.open(`https://wa.me/${normalizedDigits}`, '_blank');
         if (onAction) onAction('Verify');
     };
 
@@ -38,7 +38,7 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
             id: 'gsm',
             icon: <Phone size={16} />,
             label: 'Appel GSM',
-            href: `tel:${formattedPhone}`,
+            href: `tel:${fullInternational}`,
             color: 'var(--primary)',
             type: 'Appel' as const
         },
@@ -46,7 +46,7 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
             id: 'whatsapp',
             icon: <MessageCircle size={16} />,
             label: 'WhatsApp',
-            href: `https://wa.me/${formattedPhone}`,
+            href: `https://wa.me/${normalizedDigits}`,
             color: '#25D366',
             type: 'WhatsApp' as const,
             hidden: status === 'Invalide'
@@ -55,7 +55,7 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
             id: 'sms',
             icon: <MessageCircle size={16} />,
             label: 'Envoyer SMS',
-            href: `sms:${formattedPhone}`,
+            href: `sms:${fullInternational}`,
             color: 'var(--accent)',
             type: 'SMS' as const
         }

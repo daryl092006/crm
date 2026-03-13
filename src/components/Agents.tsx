@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { UserSquare2, TrendingUp, Award, MoreVertical } from 'lucide-react';
+import { UserSquare2, TrendingUp, Award, MoreVertical, Trash2 } from 'lucide-react';
+import { usePopup } from './Popup';
 import type { Agent, Campaign } from '../types';
 import { useToast } from './Toast';
 import AgentStatsModal from './AgentStatsModal';
@@ -19,9 +20,51 @@ interface AgentsProps {
 
 const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campaigns, statuses, onRefresh }) => {
     const { addToast } = useToast();
+    const { showConfirm } = usePopup();
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isInviteManagerOpen, setIsInviteManagerOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
+    const handleDeleteAgent = async (agentId: string, agentName: string) => {
+        const confirmed = await showConfirm(
+            "Supprimer le conseiller",
+            `ATTENTION : Vous allez supprimer ${agentName}. Cela effacera aussi TOUT son historique d'interactions et désassignera ses leads. Voulez-vous continuer ?`,
+            "error"
+        );
+
+        if (!confirmed) return;
+
+        setIsDeleting(agentId);
+        try {
+            // 1. Désassigner les leads (mettre agent_id à null)
+            await supabase
+                .from('leads')
+                .update({ agent_id: null })
+                .eq('agent_id', agentId);
+
+            // 2. Supprimer les interactions liées à cet agent
+            await supabase
+                .from('lead_interactions')
+                .delete()
+                .eq('agent_id', agentId);
+
+            // 3. Supprimer le profil final
+            const { error } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', agentId);
+
+            if (error) throw error;
+
+            addToast(`${agentName} et son historique ont été supprimés.`, "success");
+            if (onRefresh) await onRefresh();
+        } catch (error: any) {
+            addToast(error.message || "Erreur lors de la suppression complète", "error");
+        } finally {
+            setIsDeleting(null);
+        }
+    };
 
 
     const handleAddAgent = async (fullName: string) => {
@@ -173,12 +216,39 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                                     <div style={{ fontWeight: 700, color: 'var(--success)' }}>{agent.conversionRate}%</div>
                                 </td>
                                 <td>
-                                    <button
-                                        onClick={() => setSelectedAgent(agent)}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                                    >
-                                        <MoreVertical size={18} />
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button
+                                            onClick={() => setSelectedAgent(agent)}
+                                            className="btn"
+                                            style={{ 
+                                                padding: '6px', 
+                                                background: 'rgba(255,255,255,0.05)', 
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                color: 'var(--text-muted)', 
+                                                cursor: 'pointer',
+                                                borderRadius: '8px'
+                                            }}
+                                            title="Statistiques"
+                                        >
+                                            <MoreVertical size={18} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteAgent(agent.id, agent.name)}
+                                            disabled={isDeleting === agent.id}
+                                            className="btn"
+                                            style={{ 
+                                                padding: '6px', 
+                                                background: 'rgba(239, 68, 68, 0.1)', 
+                                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                color: 'var(--danger)', 
+                                                cursor: 'pointer',
+                                                borderRadius: '8px'
+                                            }}
+                                            title="Supprimer"
+                                        >
+                                            <Trash2 size={18} className={isDeleting === agent.id ? 'animate-spin' : ''} />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -190,8 +260,6 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 agent={selectedAgent}
                 leads={leads.filter(l => l.agentId === selectedAgent?.id)}
                 setLeads={setLeads}
-                campaigns={campaigns}
-                profile={profile}
                 statuses={statuses}
                 agents={agents}
                 onClose={() => setSelectedAgent(null)}

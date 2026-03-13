@@ -142,6 +142,39 @@ function App() {
         })));
       }
 
+      // 5. Harmonize Statuses (Ensure critical ones exist in DB)
+      const requiredStatuses = [
+        { id: 'nouveau', label: 'Nouveau', color: '#6366f1' },
+        { id: 'interesse', label: 'Intéressé', color: '#8b5cf6' },
+        { id: 'rappel_demande', label: 'Rappel demandé', color: '#f59e0b' },
+        { id: 'infos_envoyees', label: 'Infos envoyées', color: '#10b981' },
+        { id: 'whatsapp_envoye', label: 'WhatsApp envoyé', color: '#25D366' },
+        { id: 'visite_campus', label: 'Visite campus', color: '#ec4899' },
+        { id: 'rdv_planifie', label: 'Rendez-vous planifié', color: '#6366f1' },
+        { id: 'dossier_demande', label: 'Dossier demandé', color: '#3b82f6' },
+        { id: 'dossier_recu', label: 'Dossier reçu', color: '#06b6d4' },
+        { id: 'frais_payes', label: 'Frais de dossier payés', color: '#22c55e' },
+        { id: 'admis', label: 'Admis', color: '#a855f7' },
+        { id: 'inscrit', label: 'Inscrit (Finalisé)', color: '#22c55e' },
+        { id: 'pas_interesse', label: 'Pas intéressé', color: '#94a3b8' },
+        { id: 'refus_definitif', label: 'Refus définitif', color: '#ef4444' },
+        { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', color: '#94a3b8' },
+        { id: 'hors_cible', label: 'Hors cible', color: '#475569' },
+        { id: 'injoignable', label: 'Non répondu', color: '#64748b' },
+        { id: 'faux_numero', label: 'Faux numéro', color: '#000000' }
+      ];
+
+      const existingIds = (statusesData || []).map(s => s.id);
+      const toCreate = requiredStatuses.filter(rs => !existingIds.includes(rs.id));
+
+      if (toCreate.length > 0) {
+        console.log("Syncing statuses to DB:", toCreate.map(s => s.id));
+        await supabase.from('lead_statuses').insert(toCreate.map(s => ({
+          ...s,
+          organization_id: '00000000-0000-0000-0000-000000000000'
+        })));
+      }
+
       if (campaignsData) setCampaigns(campaignsData.map((c: any) => ({
         id: c.id,
         organizationId: c.organization_id,
@@ -157,8 +190,25 @@ function App() {
       if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000').map(a => {
         const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
         const assignedCount = agentLeads.length;
-        const inscribedCount = agentLeads.filter((l: any) => l.status_id === 'inscrit').length;
-        const rate = assignedCount > 0 ? Math.round((inscribedCount / assignedCount) * 100) : 0;
+
+        // CALCUL HARMONISÉ (Identique au AgentStatsModal)
+        const contactedCount = agentLeads.filter(l => {
+          const sid = (l.status_id || '').toLowerCase();
+          return sid !== 'nouveau' && sid !== '';
+        }).length;
+
+        const pasReponduCount = agentLeads.filter(l => {
+          const sid = (l.status_id || '').toLowerCase();
+          return sid.includes('injoignable') || sid.includes('repondeur') || sid.includes('non_repondu');
+        }).length;
+
+        const reachedCount = contactedCount - pasReponduCount;
+        
+        const inscribedCount = agentLeads.filter((l: any) => 
+          ['admis', 'inscrit', 'finalise'].some(k => (l.status_id || '').toLowerCase().includes(k))
+        ).length;
+
+        const rate = reachedCount > 0 ? Math.round((inscribedCount / reachedCount) * 100) : 0;
 
         const responseTimes = agentLeads.map((l: any) => {
           if (!l.lead_interactions || l.lead_interactions.length === 0) return null;

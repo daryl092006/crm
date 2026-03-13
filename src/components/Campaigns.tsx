@@ -79,7 +79,17 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
         const fieldToIdx: Record<string, number> = {};
         mappings.forEach(m => {
-            fieldToIdx[m.field] = headers.indexOf(normalize(m.label));
+            let idx = headers.indexOf(normalize(m.label));
+            if (idx === -1) {
+                // Intelligent fallback mapping for common header variations
+                const finder = (keywords: string[]) => headers.findIndex(h => keywords.some(k => h.includes(k)));
+                if (m.field === 'firstName') idx = finder(['prenom', 'first name', 'first']);
+                else if (m.field === 'lastName') idx = finder(['nom', 'last name', 'last', 'family']);
+                else if (m.field === 'email') idx = finder(['mail', 'e-mail', 'courriel']);
+                else if (m.field === 'phone') idx = finder(['tel', 'phone', 'numero', 'contact']);
+                else if (m.field === 'country') idx = finder(['pays', 'country']);
+            }
+            fieldToIdx[m.field] = idx;
         });
 
         let currentLeadsForAssignment = [...leads];
@@ -128,15 +138,15 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             const assignedAgent = getBestAgentForLead(agents, currentLeadsForAssignment);
 
             const newLead: any = {
-                first_name: firstName || 'Importé',
-                last_name: lastName || 'Prospect',
+                first_name: firstName || '',
+                last_name: lastName || '',
                 email: email,
                 phone: phone || "00000000",
                 country: country || 'Sénégal',
                 city: city || '',
                 field_of_interest: field || 'Autre',
                 study_level: level || '',
-                status_id: status.toLowerCase() || 'nouveau',
+                status_id: status.toLowerCase() || 'non_contacte',
                 notes: note || '',
                 metadata: metadata,
                 campaign_id: campaign.id,
@@ -602,11 +612,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
             <div className="stat-grid">
                 <div className="card">
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Total Prospects</p>
-                    <h3 style={{ fontSize: '1.5rem', fontWeight: 700 }}>{leads.length}</h3>
-                </div>
-                <div className="card">
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Efficacité (Inscrits)</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Efficacité Globale (Inscrits)</p>
                     <h3 style={{ fontSize: '1.5rem', fontWeight: 700 }}>{leads.length > 0 ? (leads.filter(l => l.statusId === 'inscrit').length / leads.length * 100).toFixed(1) : 0}%</h3>
                 </div>
             </div>
