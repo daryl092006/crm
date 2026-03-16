@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { StudentLead, Campaign, Agent, StudyField } from '../types';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
-import { sanitizeForPostgres } from '../utils/verificationService';
+import { sanitizeForPostgres, smartParsePhone, resolveCityToCountry, COUNTRIES_DB, resolveGeographicTruth } from '../utils/verificationService';
 import { getBestAgentForLead } from '../utils/assignmentService';
 
 interface LeadModalProps {
@@ -14,18 +14,20 @@ interface LeadModalProps {
     leads: StudentLead[];
     profile: any;
     initialStatusId?: string;
+    showConfirm: (title: string, message: string) => Promise<boolean>;
+    statuses: any[];
 }
-const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau' }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau', showConfirm, statuses }) => {
     const { addToast } = useToast();
     const [newLead, setNewLead] = useState<Partial<StudentLead>>({
         firstName: '',
         lastName: '',
         email: '',
         phone: '',
-        country: 'Sénégal',
+        country: '',
         city: '',
-        fieldOfInterest: 'Finance Digitale' as StudyField,
-        level: 'Licence 1',
+        fieldOfInterest: '' as StudyField,
+        level: '',
         statusId: initialStatusId,
         campaignId: '',
         notes: '',
@@ -43,15 +45,91 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
             return;
         }
 
+        // Raw Data Policy
+        const finalCountry = newLead.country || '';
+        const finalCity = newLead.city || '';
+        const finalPhone = newLead.phone || '';
+        
+        
+
+
+        const finalEmail = newLead.email?.toLowerCase().trim();
+
+        // Vérification des doublons locaux/distants
+        const { data: existing } = await supabase
+            .from('leads')
+            .select('id, first_name, last_name, email, phone')
+            .or(`email.eq.${finalEmail},phone.eq.${finalPhone}`)
+            .limit(1);
+
+        if (existing && existing.length > 0) {
+            const confirmed = await showConfirm(
+                "Doublon Détecté",
+                `Un prospect avec cet email ou ce numéro existe déjà (${existing[0].first_name} ${existing[0].last_name}). Voulez-vous mettre à jour sa fiche plutôt qu'en créer une nouvelle ?`
+            );
+            if (!confirmed) return;
+        }
+
+        if (existing && existing.length > 0) {
+            // Mode Mise à jour (Auto-Harmonize)
+            const { data: updated, error } = await supabase
+                .from('leads')
+                .update(sanitizeForPostgres({
+                    first_name: newLead.firstName,
+                    last_name: newLead.lastName,
+                    email: finalEmail,
+                    phone: finalPhone,
+                    country: finalCountry,
+                    city: finalCity,
+                    field_of_interest: newLead.fieldOfInterest,
+                    study_level: newLead.level,
+                    status_id: newLead.statusId || 'nouveau',
+                    campaign_id: newLead.campaignId,
+                    organization_id: profile?.organization_id
+                }))
+                .eq('id', existing[0].id)
+                .select()
+                .single();
+
+            if (error) {
+                addToast("Erreur lors de la mise à jour : " + error.message, "error");
+                return;
+            }
+            
+            addToast("Fiche mise à jour automatiquement par l'IA !", "success");
+            if (updated) {
+                onSave({
+                    id: updated.id,
+                    organizationId: updated.organization_id,
+                    campaignId: updated.campaign_id,
+                    agentId: updated.agent_id,
+                    statusId: updated.status_id,
+                    firstName: updated.first_name,
+                    lastName: updated.last_name,
+                    email: updated.email,
+                    phone: updated.phone,
+                    country: updated.country,
+                    city: updated.city,
+                    fieldOfInterest: updated.field_of_interest,
+                    level: updated.study_level,
+                    score: updated.score || 0,
+                    lastInteractionAt: updated.last_interaction_at,
+                    createdAt: updated.created_at
+                });
+            }
+            onClose();
+            return;
+        }
+
         const { data, error } = await supabase
             .from('leads')
             .insert(sanitizeForPostgres({
                 first_name: newLead.firstName,
                 last_name: newLead.lastName,
-                email: newLead.email,
-                phone: newLead.phone,
-                country: newLead.country,
-                city: newLead.city,
+                email: finalEmail,
+                phone: finalPhone,
+                country: finalCountry,
+                city: finalCity,
                 field_of_interest: newLead.fieldOfInterest,
                 study_level: newLead.level,
                 status_id: newLead.statusId || 'nouveau',
@@ -111,7 +189,9 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     <input type="text" placeholder="Prénom" required value={newLead.firstName} onChange={e => setNewLead({ ...newLead, firstName: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Nom" required value={newLead.lastName} onChange={e => setNewLead({ ...newLead, lastName: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="email" placeholder="Email" required value={newLead.email} onChange={e => setNewLead({ ...newLead, email: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
-                    <input type="tel" placeholder="Téléphone" required value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <input type="tel" placeholder="Téléphone" required value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', width: '100%' }} />
+                    </div>
                     <input type="text" placeholder="Pays" required value={newLead.country} onChange={e => setNewLead({ ...newLead, country: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Ville" required value={newLead.city} onChange={e => setNewLead({ ...newLead, city: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
 
@@ -136,6 +216,16 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                         <option value="">Campagne (Obligatoire)</option>
                         {campaigns.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+
+                    <select
+                        value={newLead.statusId}
+                        onChange={e => setNewLead({ ...newLead, statusId: e.target.value })}
+                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
+                    >
+                        {[...statuses].sort((a,b) => a.label.localeCompare(b.label)).map(s => (
+                            <option key={s.id} value={s.id}>{s.label}</option>
                         ))}
                     </select>
 

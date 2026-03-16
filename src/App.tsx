@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import Campaigns from './components/Campaigns'
@@ -94,7 +94,7 @@ function App() {
       setProfile(mockProfile);
 
       // 1. Fetch Statuses
-      const { data: statusesData } = await supabase.from('lead_statuses').select('*').order('sort_order');
+      const { data: statusesData } = await supabase.from('lead_statuses').select('*').order('label');
       if (statusesData) {
         setStatuses(statusesData.map(s => ({
           id: s.id,
@@ -154,27 +154,28 @@ function App() {
 
       // 5. Harmonize Statuses (STRICT ENFORCEMENT)
       const requiredStatuses = [
-        { id: 'nouveau', label: 'Nouveau/ Nouveau fichier', color: '#6366f1', sort_order: 1 },
+        { id: 'nouveau', label: 'Nouveau (Non Contacté)', color: '#6366f1', sort_order: 1 },
         { id: 'interesse', label: 'Intéressé', color: '#8b5cf6', sort_order: 2 },
         { id: 'rappel', label: 'Rappel ou en cours', color: '#f59e0b', sort_order: 3 },
         { id: 'rdv_planifie', label: 'Rendez-vous planifié.', color: '#6366f1', sort_order: 4 },
         { id: 'reflexion', label: 'Réflexion et nous faire un retour', color: '#3b82f6', sort_order: 5 },
-        { id: 'dossier_recu', label: 'Dossiers reçus', color: '#06b6d4', sort_order: 6 },
+        { id: 'dossier_recu', label: 'Dossier reçu', color: '#06b6d4', sort_order: 6 },
         { id: 'admis', label: 'Admis', color: '#a855f7', sort_order: 7 },
         { id: 'inscription_attente', label: 'Inscription en attente', color: '#ec4899', sort_order: 8 },
         { id: 'inscrit', label: 'Inscrit', color: '#22c55e', sort_order: 9 },
         { id: 'reorientation', label: 'Réorientation', color: '#10b981', sort_order: 10 },
         { id: 'pas_interesse', label: 'Pas intéressé', color: '#94a3b8', sort_order: 11 },
         { id: 'refus_categorique', label: 'Refus catégorique', color: '#ef4444', sort_order: 12 },
-        { id: 'inscrit_ailleurs', label: 'Déjà inscrit ailleurs', color: '#44403c', sort_order: 13 },
+        { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', color: '#44403c', sort_order: 13 },
         { id: 'pas_moyens', label: 'Pas les moyens', color: '#44403c', sort_order: 14 },
         { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', color: '#44403c', sort_order: 15 },
         { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', color: '#44403c', sort_order: 16 },
-        { id: 'hors_cible', label: 'Hors-cible', color: '#44403c', sort_order: 17 },
+        { id: 'hors_cible', label: 'Hors cible', color: '#44403c', sort_order: 17 },
         { id: 'refus_repondre', label: 'Refus de répondre', color: '#44403c', sort_order: 18 },
-        { id: 'injoignable', label: 'Injoignable / ne répond pas', color: '#64748b', sort_order: 19 },
+        { id: 'injoignable', label: 'Injoignable/ Ne répond pas', color: '#64748b', sort_order: 19 },
         { id: 'repondeur', label: 'Répondeur', color: '#64748b', sort_order: 20 },
-        { id: 'faux_numero', label: 'Numéro incorrect / faux numéro', color: '#1c1917', sort_order: 21 }
+        { id: 'faux_numero', label: 'Faux Numéro', color: '#1c1917', sort_order: 21 },
+        { id: 'whatsapp_indisponible', label: 'Numéro non disponible sur WhatsApp.', color: '#94a3b8', sort_order: 22 }
       ];
 
       const allowedIds = requiredStatuses.map(rs => rs.id);

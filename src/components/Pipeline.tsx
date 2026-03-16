@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { MoreHorizontal, ArrowRight } from 'lucide-react';
 import LeadModal from './LeadModal';
-import CommunicationCenter from './CommunicationCenter';
 import { supabase } from '../supabaseClient';
-import type { StudentLead, LeadStatus, Interaction, InteractionType, Campaign, Agent } from '../types';
+import type { StudentLead, LeadStatus, Campaign, Agent } from '../types';
 import { useToast } from './Toast';
+import { usePopup } from './Popup';
 import OutcomeModal from './OutcomeModal';
 
 interface PipelineProps {
@@ -18,6 +18,7 @@ interface PipelineProps {
 
 const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns, agents, statuses }) => {
     const { addToast } = useToast();
+    const { showConfirm } = usePopup();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedStatusId, setSelectedStatusId] = useState<string | undefined>(undefined);
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
@@ -73,18 +74,22 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 agents={agents}
                 leads={leads}
                 profile={profile}
+                showConfirm={showConfirm}
+                statuses={statuses}
             />
 
             <div style={{
                 display: 'flex',
-                gap: '2.5rem',
+                gap: '1.5rem',
                 minHeight: '75vh',
                 overflowX: 'auto',
+                padding: '0.5rem',
                 paddingBottom: '2rem',
-                alignItems: 'flex-start'
+                alignItems: 'flex-start',
+                scrollbarWidth: 'thin'
             }}>
                 {[
-                    { name: "QUALIFICATION", keywords: ['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible'] },
+                    { name: "QUALIFICATION", keywords: ['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible', 'whatsapp'] },
                     { name: "INFORMATION", keywords: ['interesse', 'rappel', 'reflexion', 'reorientation'] },
                     { name: "CANDIDATURE", keywords: ['rdv_planifie', 'dossier_recu'] },
                     { name: "DÉCISION", keywords: ['admis', 'inscription_attente', 'inscrit'] }
@@ -158,7 +163,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                                                                     outline: 'none'
                                                                 }}
                                                             >
-                                                                    {statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                                    {[...statuses].sort((a,b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                                             </select>
                                                             <MoreHorizontal size={14} color="var(--text-muted)" />
                                                         </div>
@@ -169,43 +174,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
 
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
                                                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                            <CommunicationCenter
-                                                                phone={lead.phone}
-                                                                onAction={async (type) => {
-                                                                    const interactionType = {
-                                                                        'Appel': 'call',
-                                                                        'WhatsApp': 'whatsapp',
-                                                                        'SMS': 'sms',
-                                                                        'Verify': 'note',
-                                                                        'Confirm': 'note'
-                                                                    }[type] as InteractionType;
-
-                                                                    const newInt: Interaction = {
-                                                                        id: `int-${Date.now()}`,
-                                                                        leadId: lead.id,
-                                                                        agentId: lead.agentId,
-                                                                        type: interactionType,
-                                                                        content: `Contact via ${type}`,
-                                                                        createdAt: new Date().toISOString()
-                                                                    };
-
-                                                                    await supabase.from('lead_interactions').insert({
-                                                                        lead_id: lead.id,
-                                                                        agent_id: lead.agentId,
-                                                                        type: interactionType,
-                                                                        content: `Contact via ${type}`
-                                                                    });
-
-                                                                    setLeads(prev => prev.map(l => l.id === lead.id ? {
-                                                                        ...l,
-                                                                        interactions: [newInt, ...(l.interactions || [])]
-                                                                    } : l));
-
-                                                                    if (type === 'Appel' || type === 'WhatsApp') {
-                                                                        setSelectedLeadForOutcome(lead);
-                                                                    }
-                                                                }}
-                                                            />
+                                                            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{lead.phone}</div>
                                                         </div>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lead.score} pts</span>

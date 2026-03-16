@@ -1,28 +1,37 @@
-import { Target, ArrowLeft, Upload, Download, Database, Trash2, Repeat, Edit2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { 
+    Target, 
+    Trash2, 
+    Plus, 
+    ArrowRight, 
+    ArrowLeft,
+    Facebook, 
+    Search, 
+    Linkedin, 
+    Instagram, 
+    TrendingUp, 
+    Database, 
+    Upload, 
+    Download, 
+    Edit2, 
+    Repeat,
+    ChevronLeft,
+    ChevronRight
+} from 'lucide-react';
 import type { StudentLead, Campaign, Agent } from '../types';
 import { getBestAgentForLead } from '../utils/assignmentService';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import { usePopup } from './Popup';
-import { useState } from 'react';
+
 import AddCampaignModal from './AddCampaignModal';
 import LeadExportModal from './LeadExportModal';
-import { smartParsePhone, sanitizeForPostgres } from '../utils/verificationService';
+import { smartParsePhone, sanitizeForPostgres, resolveCityToCountry, COUNTRIES_DB, resolveGeographicTruth } from '../utils/verificationService';
 
 
 
-const AVAILABLE_FIELDS = [
-    { value: 'firstName', label: 'Prénom' },
-    { value: 'lastName', label: 'Nom' },
-    { value: 'email', label: 'Email' },
-    { value: 'phone', label: 'Téléphone' },
-    { value: 'country', label: 'Pays' },
-    { value: 'city', label: 'Ville' },
-    { value: 'fieldOfInterest', label: 'Filière' },
-    { value: 'level', label: 'Niveau' },
-    { value: 'notes', label: 'Notes' },
-];
+
 
 interface CampaignsProps {
     profile: any;
@@ -40,6 +49,13 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
     const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(localStorage.getItem('crm_selected_campaign_id'));
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isAddCampaignModalOpen, setIsAddCampaignModalOpen] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    // Reset pagination when campaign changes
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedCampaignId]);
 
 
 
@@ -131,35 +147,17 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             if (!hasAnySignificantData) return;
 
             let phoneRaw = getVal('phone') || "";
-            const smartPhone = smartParsePhone(phoneRaw);
-            let phone = smartPhone.primary || "00000000";
-            let additionalPhoneNote = smartPhone.note;
-            if (smartPhone.others.length > 0) {
-                additionalPhoneNote += ` | Autres numéros : ${smartPhone.others.join(', ')}`;
-            }
-
+            
             // --- AMÉLIORATION : Email optionnel (Placeholder si vide) ---
             if (!email || !email.includes('@')) {
-                // Si la ligne a quand même des données (ex: un nom ou un tel), on ne bloque pas
                 const hasName = getVal('firstName') || getVal('lastName');
-                if (hasName || (phone !== "00000000" && phone !== "")) {
-                    // Utilisation d'un email déterministe basé sur le téléphone pour éviter les doublons lors des ré-imports
-                    const phoneId = phone.replace(/\D/g, '') || Math.random().toString(36).substring(7);
+                if (hasName || phoneRaw) {
+                    const phoneId = phoneRaw.replace(/\D/g, '') || Math.random().toString(36).substring(7);
                     email = `prospect-${phoneId}@elite-placeholder.com`;
                 } else {
-                    // Si vraiment rien de significatif, on ignore la ligne sans erreur
                     return;
                 }
             }
-
-            const firstName = getVal('firstName');
-            const lastName = getVal('lastName');
-            const country = getVal('country');
-            const city = getVal('city');
-            const field = getVal('fieldOfInterest');
-            const level = getVal('level');
-            const status = getVal('statusId');
-            const note = getVal('notes') + additionalPhoneNote;
 
             const metadata: Record<string, any> = {};
             mappings.forEach(m => {
@@ -172,16 +170,16 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             const assignedAgent = getBestAgentForLead(agents, currentLeadsForAssignment);
 
             const newLead: any = {
-                first_name: firstName || '',
-                last_name: lastName || '',
+                first_name: getVal('firstName') || '',
+                last_name: getVal('lastName') || '',
                 email: email,
-                phone: phone || "00000000",
-                country: country || 'Sénégal',
-                city: city || '',
-                field_of_interest: field || 'Autre',
-                study_level: level || '',
-                status_id: status.toLowerCase() || 'nouveau',
-                notes: note || '',
+                phone: getVal('phone') || '',
+                country: getVal('country') || '',
+                city: getVal('city') || '',
+                field_of_interest: getVal('fieldOfInterest') || '',
+                study_level: getVal('level') || '',
+                status_id: (getVal('statusId') || 'nouveau').toLowerCase(),
+                notes: getVal('notes') || '',
                 metadata: metadata,
                 campaign_id: campaign.id,
                 agent_id: assignedAgent?.id,
@@ -429,8 +427,40 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
     const handleDeleteLead = async (id: string) => {
         const confirmed = await showConfirm("Supprimer le prospect", "Êtes-vous sûr de vouloir supprimer ce prospect ? Cette action est irréversible.", "error");
         if (confirmed) {
-            setLeads(prev => prev.filter(l => l.id !== id));
-            supabase.from('leads').delete().eq('id', id).then(() => addToast("Prospect supprimé.", "info"));
+            try {
+                const { error } = await supabase.from('leads').delete().eq('id', id);
+                if (error) throw error;
+                
+                setLeads(prev => prev.filter(l => l.id !== id));
+                addToast("Prospect supprimé.", "info");
+                if (onRefresh) await onRefresh();
+            } catch (error: any) {
+                addToast("Erreur lors de la suppression : " + error.message, "error");
+            }
+        }
+    };
+
+    const handleClearCampaignLeads = async (campaignId: string) => {
+        const campaign = campaigns.find(c => c.id === campaignId);
+        if (!campaign) return;
+
+        const confirmed = await showConfirm(
+            "Vider la campagne",
+            `Êtes-vous sûr de vouloir supprimer TOUS les prospects de la campagne "${campaign.name}" ? Cette action est irréversible.`,
+            "error"
+        );
+
+        if (confirmed) {
+            try {
+                const { error } = await supabase.from('leads').delete().eq('campaign_id', campaignId);
+                if (error) throw error;
+                
+                setLeads(prev => prev.filter(l => l.campaignId !== campaignId));
+                addToast("Tous les prospects ont été supprimés de cette campagne.", "success");
+                if (onRefresh) await onRefresh();
+            } catch (error: any) {
+                addToast("Erreur lors du vidage : " + error.message, "error");
+            }
         }
     };
 
@@ -535,77 +565,87 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                     </button>
                 </div>
 
-                <div className="card" style={{ marginBottom: '2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>{campaign.name}</h1>
-                            <button 
-                                onClick={() => handleEditCampaign(campaign.id, campaign.name)}
-                                className="btn" 
-                                style={{ 
-                                    padding: '4px', 
-                                    minWidth: 'auto', 
-                                    background: 'transparent', 
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2.5rem' }}>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <h1 style={{ fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em' }}>{campaign.name}</h1>
+                                <button 
+                                    onClick={() => handleEditCampaign(campaign.id, campaign.name)}
+                                    className="btn" 
+                                    style={{ 
+                                        padding: '4px', 
+                                        minWidth: 'auto', 
+                                        background: 'transparent', 
+                                        color: 'var(--text-muted)',
+                                        opacity: 0.6
+                                    }}
+                                    title="Modifier le nom"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+                                <div style={{ 
+                                    padding: '4px 12px', 
+                                    background: 'rgba(255,255,255,0.05)', 
+                                    borderRadius: '8px', 
+                                    fontSize: '0.75rem', 
+                                    fontWeight: 700,
                                     color: 'var(--text-muted)',
-                                    opacity: 0.6
-                                }}
-                                title="Modifier le nom"
-                            >
-                                <Edit2 size={16} />
-                            </button>
-                        </div>
-                        <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>Source: {campaign.source}</p>
+                                    border: '1px solid rgba(255,255,255,0.1)'
+                                }}> SOURCE : {campaign.source.toUpperCase()} </div>
+                                <div style={{ fontSize: '0.875rem', color: 'var(--primary)', fontWeight: 800 }}>
+                                    {campaignLeads.length} PROSPECTS AU TOTAL
+                                </div>
+                            </div>
                         </div>
                         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                            <button onClick={() => handleMigrateCampaign(campaign.id)} className="btn" title="Migrer les prospects" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white' }}>
+                            <button onClick={() => handleMigrateCampaign(campaign.id)} className="btn" title="Migrer les prospects" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', padding: '10px' }}>
                                 <Repeat size={18} />
                             </button>
-                            <button onClick={() => handleDeleteCampaign(campaign.id)} className="btn" title="Supprimer la campagne" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}>
+                            <button onClick={() => handleClearCampaignLeads(campaign.id)} className="btn" title="Vider tous les prospects" style={{ background: 'rgba(239, 68, 68, 0.05)', color: '#f87171', padding: '10px 15px' }}>
+                                <Trash2 size={18} />
+                                <span style={{ marginLeft: '6px', fontSize: '0.85rem', fontWeight: 800 }}>Vider</span>
+                            </button>
+                            <button onClick={() => handleDeleteCampaign(campaign.id)} className="btn" title="Supprimer la campagne" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '10px' }}>
                                 <Trash2 size={18} />
                             </button>
-                            <button onClick={downloadTemplate} className="btn" title="Modèle d'importation" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white' }}>
-                                <Download size={18} />
-                            </button>
-                            <button onClick={() => setIsExportModalOpen(true)} className="btn" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)', margin: '0 5px' }}></div>
+                            <button onClick={() => setIsExportModalOpen(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px' }}>
                                 <Download size={18} /> Exporter
                             </button>
-
-                            <div style={{ position: 'relative' }}>
-                                <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => handleImport(e, campaign.id)} style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
-                                <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Upload size={18} /> Importer Prospects</button>
-                            </div>
                         </div>
                     </div>
-                    <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.03)', borderRadius: '16px', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <Database size={14} /> Structure du fichier (Headers exacts)
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                                    {mappings.map(m => (
-                                        <div key={m.field} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <code style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.875rem', color: 'white', border: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>
-                                                {m.label}
-                                            </code>
-                                            <span style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                                                {AVAILABLE_FIELDS.find(f => f.value === m.field)?.label || m.field}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem', fontStyle: 'italic' }}>
-                                    Note: Votre fichier Excel doit utiliser exactement ces noms de colonnes pour être importé correctement.
-                                </p>
-                            </div>
 
-                        </div>
+                <div className="card" style={{ marginBottom: '2rem', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                Colonnes mappées : <span style={{ color: 'white' }}>{mappings.length}</span>
+                            </div>
+                            <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.1)' }}></div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--success)', fontWeight: 800 }}>
+                                {campaignLeads.filter(l => {
+                                    const sid = (l.statusId || '').toLowerCase();
+                                    const slabel = (l.status?.label || '').toLowerCase();
+                                    return ['admis', 'inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
+                                }).length} Inscrits
+                            </div>
+                         </div>
+                         <div style={{ display: 'flex', gap: '15px' }}>
+                            <div style={{ position: 'relative' }}>
+                                <input type="file" accept=".csv, .xlsx, .xls" onChange={(e) => handleImport(e, campaign.id)} style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                                <button className="btn" style={{ background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px' }}><Upload size={16} /> Importer Prospects</button>
+                            </div>
+                            <button onClick={downloadTemplate} className="btn" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', padding: '8px 16px', borderRadius: '10px' }}>
+                                <Download size={16} /> Télécharger Modèle
+                            </button>
+                         </div>
                     </div>
                 </div>
 
-                <div className="card" style={{ overflowX: 'auto' }}>
-                    <table style={{ minWidth: mappings.length > 5 ? `${mappings.length * 150}px` : '1000px' }}>
+                <div className="table-container">
+                    <table>
                         <thead>
                             <tr>
                                 {mappings.map((m, i) => (
@@ -615,7 +655,10 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                             </tr>
                         </thead>
                         <tbody>
-                            {campaignLeads.map((lead) => (
+                            {(() => {
+                                const startIndex = (currentPage - 1) * itemsPerPage;
+                                return campaignLeads.slice(startIndex, startIndex + itemsPerPage);
+                            })().map((lead) => (
                                 <tr key={lead.id}>
                                     {mappings.map((m, i) => {
                                         let value: any = '';
@@ -639,7 +682,8 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                                                 );
                                             }
                                             if (m.field === 'notes') {
-                                                return <td key={i}>{lead.notes || ''}</td>;
+                                                const truncatedNotes = lead.notes ? (lead.notes.length > 30 ? lead.notes.substring(0, 30) + "..." : lead.notes) : "";
+                                                return <td key={i} title={lead.notes}>{truncatedNotes}</td>;
                                             }
                                             value = (lead as any)[m.field];
                                         } else {
@@ -666,6 +710,51 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                     </table>
                 </div>
 
+                {/* PAGINATION ELITE */}
+                {(() => {
+                    const totalPages = Math.ceil(campaignLeads.length / itemsPerPage);
+                    return (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', padding: '0 1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
+                                <select 
+                                    value={itemsPerPage} 
+                                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                    className="input"
+                                    style={{ padding: '0 10px', borderRadius: '12px', height: '40px', minWidth: '120px', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)' }}
+                                >
+                                    {[10, 20, 50, 100].map(v => <option key={v} value={v}>{v} par page</option>)}
+                                </select>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>sur {campaignLeads.length} prospects</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <button 
+                                    disabled={currentPage === 1}
+                                    onClick={() => setCurrentPage(p => p - 1)}
+                                    style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontWeight: 900, color: 'var(--primary)', fontSize: '1.1rem' }}>{currentPage}</span>
+                                    <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
+                                    <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{totalPages || 1}</span>
+                                </div>
+
+                                <button 
+                                    disabled={currentPage === totalPages || totalPages === 0}
+                                    onClick={() => setCurrentPage(p => p + 1)}
+                                    style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: (currentPage === totalPages || totalPages === 0) ? 'rgba(255,255,255,0.1)' : 'white', cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
+                                >
+                                    <ChevronRight size={20} />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 <LeadExportModal 
                     isOpen={isExportModalOpen} 
                     onClose={() => setIsExportModalOpen(false)}
@@ -677,10 +766,58 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
     }
 
     return (
-        <div className="animate-fade">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Campagnes Marketing</h1>
-                <button onClick={() => setIsAddCampaignModalOpen(true)} className="btn btn-primary"><Target size={18} /> Créer</button>
+        <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+            {/* HERO SECTION - STRATEGY CENTER */}
+            <div style={{ 
+                background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(34, 211, 238, 0.1))',
+                borderRadius: '32px',
+                padding: window.innerWidth < 768 ? '1.5rem' : '3rem',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '2rem'
+            }}>
+                <div style={{ flex: '1 1 300px' }}>
+                    <h1 style={{ fontSize: window.innerWidth < 768 ? '2rem' : '3.5rem', fontWeight: 950, letterSpacing: '-0.05em', marginBottom: '0.5rem', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                        Centre Stratégique <br/> des Campagnes
+                    </h1>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '1.125rem', maxWidth: '500px' }}>
+                        Pilotez vos sources d'acquisition et analysez le ROI de chaque canal en temps réel.
+                    </p>
+                </div>
+                
+                <div className="stat-grid" style={{ flex: '1 1 400px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                    <div className="glass-card" style={{ textAlign: 'center', padding: '1.5rem' }}>
+                        <div style={{ color: 'var(--primary)', marginBottom: '0.5rem' }}><Target size={24} /></div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 900 }}>{campaigns.length}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Actives</div>
+                    </div>
+                    <div className="glass-card" style={{ textAlign: 'center', padding: '1.5rem' }}>
+                        <div style={{ color: 'var(--success)', marginBottom: '0.5rem' }}><TrendingUp size={24} /></div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 900 }}>
+                            {leads.length > 0 ? Math.round((leads.filter(l => ['inscrit', 'inscription_confirmee', 'inscription_attente', 'admis'].some(k => (l.statusId || '').toLowerCase() === k)).length / leads.length * 100)) : 0}%
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Taux Global</div>
+                    </div>
+                    <div className="glass-card" style={{ textAlign: 'center', padding: '1.5rem' }}>
+                        <div style={{ color: 'var(--accent)', marginBottom: '0.5rem' }}><Database size={24} /></div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: 900 }}>{leads.length}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>Données</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '1.75rem', fontWeight: 850, letterSpacing: '-0.03em' }}>Toutes les Sources</h2>
+                <button 
+                    onClick={() => setIsAddCampaignModalOpen(true)} 
+                    className="btn btn-primary"
+                    style={{ padding: '0.75rem 2rem', borderRadius: '16px', fontWeight: 800, fontSize: '1rem' }}
+                >
+                    <Plus size={20} /> Nouvelle Campagne
+                </button>
             </div>
 
             <AddCampaignModal 
@@ -689,30 +826,116 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 onSave={handleAddCampaign}
             />
 
+            <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '2rem' }}>
+                {campaigns.map((campaign) => {
+                    const cLeads = leads.filter(l => l.campaignId === campaign.id);
+                    const totalLeads = cLeads.length;
+    const inscribedKeywords = ['inscrit', 'inscription_confirmee', 'inscription_attente', 'admis'];
+    const inscritLeads = cLeads.filter(l => inscribedKeywords.some(k => (l.statusId || '').toLowerCase() === k)).length;
+    const cRate = totalLeads > 0 ? Math.round((inscritLeads / totalLeads) * 100) : 0;
 
-            <div className="stat-grid">
-                <div className="card">
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Efficacité Globale (Inscrits)</p>
-                    <h3 style={{ fontSize: '1.5rem', fontWeight: 700 }}>{leads.length > 0 ? (leads.filter(l => l.statusId === 'inscrit').length / leads.length * 100).toFixed(1) : 0}%</h3>
-                </div>
+                    // Phase Calculation for "Classification" visual
+                    const getCount = (keys: string[]) => cLeads.filter(l => keys.some(k => (l.statusId || '').toLowerCase() === k)).length;
+                    const qCount = getCount(['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible']);
+                    const iCount = getCount(['interesse', 'rappel', 'reflexion', 'reorientation']);
+                    const canCount = getCount(['rdv_planifie', 'dossier_recu']);
+                    const admCount = getCount(['admis', 'inscription_attente', 'inscrit', 'inscription_confirmee']);
+                    
+                    // Logic to detect source icon
+                    const src = (campaign.source || '').toLowerCase();
+                    let SourceIcon = Target;
+                    let iconColor = 'var(--primary)';
+                    if (src.includes('facebook') || src.includes('meta')) { SourceIcon = Facebook; iconColor = '#1877F2'; }
+                    else if (src.includes('google')) { SourceIcon = Search; iconColor = '#4285F4'; }
+                    else if (src.includes('linkedin')) { SourceIcon = Linkedin; iconColor = '#0A66C2'; }
+                    else if (src.includes('instagram')) { SourceIcon = Instagram; iconColor = '#E4405F'; }
+
+                    return (
+                        <div key={campaign.id} className="card" style={{ 
+                            position: 'relative', 
+                            padding: '2rem', 
+                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                            cursor: 'pointer',
+                        }} onClick={() => handleSelectCampaign(campaign.id)}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                                <div style={{ 
+                                    width: '52px', 
+                                    height: '52px', 
+                                    borderRadius: '16px', 
+                                    background: `${iconColor}15`, 
+                                    border: `1px solid ${iconColor}30`,
+                                    display: 'grid', 
+                                    placeItems: 'center' 
+                                }}>
+                                    <SourceIcon size={26} color={iconColor} />
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '1.5rem', fontWeight: 950 }}>{cLeads.length}</div>
+                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase' }}>Prospects</div>
+                                </div>
+                            </div>
+
+                            <h3 style={{ fontSize: '1.35rem', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>{campaign.name}</h3>
+                            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem', fontWeight: 500 }}>Source: <span style={{ color: 'white', fontWeight: 700 }}>{campaign.source}</span></p>
+
+                            <div style={{ marginTop: 'auto' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.6rem', fontWeight: 750 }}>
+                                    <span>Taux de conversion</span>
+                                    <span style={{ color: 'var(--success)' }}>{cRate}%</span>
+                                </div>
+                                <div style={{ height: '8px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                                    <div style={{ 
+                                        height: '100%', 
+                                        width: `${cRate}%`, 
+                                        background: `linear-gradient(to right, ${iconColor}, var(--success))`, 
+                                        borderRadius: '10px',
+                                        transition: 'width 1s ease-out'
+                                    }}></div>
+                                </div>
+                            </div>
+
+                            {/* Classification Breakdown (Mini Pipeline) */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '1.25rem' }}>
+                                {[
+                                    { label: 'Qualif.', val: qCount, color: 'var(--warning)' },
+                                    { label: 'Infos', val: iCount, color: 'var(--accent)' },
+                                    { label: 'Cand.', val: canCount, color: 'var(--primary)' },
+                                    { label: 'Admis', val: admCount, color: 'var(--success)' }
+                                ].map((p, idx) => (
+                                    <div key={idx} style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 900, color: p.val > 0 ? 'white' : 'var(--text-muted)' }}>{p.val}</div>
+                                        <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>{p.label}</div>
+                                        <div style={{ height: '3px', background: p.val > 0 ? p.color : 'rgba(255,255,255,0.05)', borderRadius: '4px', marginTop: '4px' }}></div>
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(campaign.id); }} 
+                                    className="btn" 
+                                    style={{ background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', padding: '0.5rem', flex: 0 }}
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                                <button className="btn" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', fontWeight: 750 }}>
+                                    Gérer les prospects <ArrowRight size={14} />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {campaigns.map((campaign) => (
-                    <div key={campaign.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>{campaign.name}</h3>
-                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Source: {campaign.source}</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button onClick={() => handleDeleteCampaign(campaign.id)} className="btn" style={{ color: '#ef4444', padding: '8px' }}>
-                                <Trash2 size={16} />
-                            </button>
-                            <button onClick={() => handleSelectCampaign(campaign.id)} className="btn">Détails</button>
-                        </div>
+            {campaigns.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '5rem 2rem', background: 'rgba(255,255,255,0.02)', borderRadius: '32px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                    <div style={{ width: '80px', height: '80px', background: 'rgba(255,255,255,0.03)', borderRadius: '24px', display: 'grid', placeItems: 'center', margin: '0 auto 1.5rem' }}>
+                        <Target size={40} color="var(--text-muted)" />
                     </div>
-                ))}
-            </div>
+                    <h3 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.5rem' }}>Aucune campagne pour le moment</h3>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Commencez par créer votre première source d'acquisition de prospects.</p>
+                    <button onClick={() => setIsAddCampaignModalOpen(true)} className="btn btn-primary" style={{ padding: '0.8rem 2.5rem', borderRadius: '16px' }}>+ Nouvelle Campagne</button>
+                </div>
+            )}
         </div>
     );
 };

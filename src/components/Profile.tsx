@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Mail, Shield, Camera, Save, Sparkles } from 'lucide-react';
+import { User, Mail, Shield, Camera, Save, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from './Toast';
 import { supabase } from '../supabaseClient';
 
@@ -13,11 +13,13 @@ interface ProfileProps {
     onUpdate: () => Promise<void>;
 }
 
-const Profile: React.FC<ProfileProps> = ({ profile, leads, statuses, onUpdate }) => {
+const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
     const { addToast } = useToast();
     const [name, setName] = useState(profile?.full_name || 'Utilisateur');
     const [email, setEmail] = useState(profile?.email || '');
     const [loading, setLoading] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
 
     const handleSave = async () => {
         setLoading(true);
@@ -192,7 +194,11 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, statuses, onUpdate })
                         </tr>
                     </thead>
                     <tbody>
-                        {leads.filter(l => l.agentId === profile.id).map(lead => (
+                        {(() => {
+                            const myLeads = leads.filter(l => l.agentId === profile.id);
+                            const startIndex = (currentPage - 1) * itemsPerPage;
+                            return myLeads.slice(startIndex, startIndex + itemsPerPage);
+                        })().map(lead => (
                             <tr key={lead.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                 <td style={{ padding: '1rem' }}>
                                     <div style={{ fontWeight: 600 }}>{lead.firstName} {lead.lastName}</div>
@@ -225,6 +231,44 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, statuses, onUpdate })
                         )}
                     </tbody>
                 </table>
+                {(() => {
+                    const myLeads = leads.filter(l => l.agentId === profile.id);
+                    const totalPages = Math.ceil(myLeads.length / itemsPerPage);
+                    if (totalPages <= 1) return null;
+
+                    return (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', borderTop: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
+                                <select 
+                                    value={itemsPerPage} 
+                                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                    style={{ padding: '4px 8px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                                >
+                                    {[10, 20, 50].map(v => <option key={v} value={v}>{v}</option>)}
+                                </select>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <button 
+                                    disabled={currentPage === 1}
+                                    onClick={() => setCurrentPage(p => p - 1)}
+                                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: 'pointer', padding: '6px', borderRadius: '8px' }}
+                                >
+                                    <ChevronLeft size={18} />
+                                </button>
+                                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{currentPage} / {totalPages}</span>
+                                <button 
+                                    disabled={currentPage === totalPages}
+                                    onClick={() => setCurrentPage(p => p + 1)}
+                                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: currentPage === totalPages ? 'rgba(255,255,255,0.1)' : 'white', cursor: 'pointer', padding: '6px', borderRadius: '8px' }}
+                                >
+                                    <ChevronRight size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );

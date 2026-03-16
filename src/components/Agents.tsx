@@ -144,7 +144,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 </div>
             </div>
 
-            <div className="card" style={{ overflowX: 'auto' }}>
+            <div className="table-container">
                 <table style={{ minWidth: '800px' }}>
                     <thead>
                         <tr>

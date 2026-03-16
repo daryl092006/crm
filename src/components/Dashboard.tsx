@@ -1,4 +1,4 @@
-import { GraduationCap, Target, PieChart, Download, Users, TrendingUp } from 'lucide-react';
+import { GraduationCap, Target, PieChart, Download, Users, TrendingUp, Mail } from 'lucide-react';
 import type { StudentLead, Campaign } from '../types';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
@@ -20,23 +20,39 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns, statuses }) => 
 
     const filteredLeads = selectedCampaignId === 'all' 
         ? leads 
-        : leads.filter(l => l.campaignId === selectedCampaignId);
+        : leads.filter(l => String(l.campaignId) === String(selectedCampaignId));
 
     const totalLeads = filteredLeads.length;
-    const inscritLeads = filteredLeads.filter(l => l.statusId === 'inscrit' || l.statusId === 'inscription_confirmee').length;
+    const inscritLeads = filteredLeads.filter(l => {
+        const sid = (l.statusId || '').toLowerCase();
+        const slabel = (l.status?.label || '').toLowerCase();
+        return ['admis', 'inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
+    }).length;
     const convRate = totalLeads > 0 ? ((inscritLeads / totalLeads) * 100).toFixed(1) : '0';
 
-    // Unified Phase categorization logic
     const getPhaseLeads = (keywords: string[]) => 
-        filteredLeads.filter(l => keywords.some(k => (l.statusId || '').toLowerCase().includes(k) || (l.status?.label || '').toLowerCase().includes(k)));
+        filteredLeads.filter(l => {
+            const sid = (l.statusId || '').toLowerCase();
+            const slabel = (l.status?.label || '').toLowerCase();
+            return keywords.some(k => sid.includes(k) || slabel.includes(k));
+        });
 
-    const qualificationLeads = getPhaseLeads(['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible']);
-    const informationLeads = getPhaseLeads(['interesse', 'rappel', 'reflexion', 'reorientation']);
-    const candidatureLeads = getPhaseLeads(['rdv_planifie', 'dossier_recu']);
-    const admissionLeads = getPhaseLeads(['admis', 'inscription_attente', 'inscrit']);
+    const qualificationLeads = filteredLeads.filter(l => {
+        const sid = (l.statusId || '').toLowerCase();
+        const slabel = (l.status?.label || '').toLowerCase();
+        return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
+    });
+    const informationLeads = getPhaseLeads(['interesse', 'rappel', 'reflexion', 'reorientation', 'annee_prochaine', 'prochaine']);
+    const candidatureLeads = getPhaseLeads(['rdv_planifie', 'dossier_recu', 'candidature']);
+    const admissionLeads = getPhaseLeads(['admis', 'inscrit', 'confirme', 'admission']);
 
     const stats = [
         { label: 'Total Prospects', value: totalLeads.toString(), icon: Users, color: 'var(--primary)' },
+        { label: 'Non Contactés', value: filteredLeads.filter(l => {
+            const sid = (l.statusId || '').toLowerCase();
+            const slabel = (l.status?.label || '').toLowerCase();
+            return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
+        }).length.toString(), icon: Mail, color: '#f87171' },
         { label: 'En Qualification', value: qualificationLeads.length.toString(), icon: Target, color: 'var(--warning)' },
         { label: 'Dossiers Candidats', value: candidatureLeads.length.toString(), icon: PieChart, color: 'var(--accent)' },
         { label: 'Taux de Conversion Admission', value: `${convRate}%`, icon: GraduationCap, color: 'var(--success)' },
@@ -91,12 +107,12 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns, statuses }) => 
 
     return (
         <div className="animate-fade">
-            <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
+            <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
+                <div style={{ flex: '1 1 300px' }}>
                     <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Tableau de Bord Université</h1>
                     <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>Suivi du tunnel de recrutement et des inscriptions.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                     <select 
                         value={selectedCampaignId}
                         onChange={(e) => setSelectedCampaignId(e.target.value)}
@@ -114,7 +130,7 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns, statuses }) => 
                 </div>
             </div>
 
-            <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '2rem' }}>
+            <div className="stat-grid" style={{ marginBottom: '2rem' }}>
                 {stats.map((stat, index) => (
                     <div key={index} className="card" style={{ position: 'relative', overflow: 'hidden' }}>
                         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -166,9 +182,9 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns, statuses }) => 
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem' }}>
+            <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem' }}>
                 {/* POINT GLOBAL DES STATUTS */}
-                <div className="card" style={{ gridColumn: 'span 2' }}>
+                <div className="card" style={{ gridColumn: '1 / -1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                             <div style={{ padding: '10px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '12px' }}>
@@ -184,30 +200,44 @@ const Dashboard: React.FC<DashboardProps> = ({ leads, campaigns, statuses }) => 
                             className="btn" 
                             style={{ background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '12px', fontSize: '0.875rem' }}
                         >
-                            {showAllStatus ? 'Réduire la vue' : 'Voir tous les détails (21)'}
+                            {showAllStatus ? 'Réduire la vue' : `Voir tous les détails (${statuses.length})`}
                         </button>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
+                    <div className="stat-grid" style={{ gap: '1.5rem' }}>
                         {[
                             { id: 'inscrit', label: 'Inscrit', color: 'var(--success)' },
                             { id: 'admis', label: 'Admis', color: 'var(--accent)' },
-                            { id: 'nouveau', label: 'Nouveau', color: 'var(--primary)' },
-                            { id: 'injoignable', label: 'Injoignable', color: '#94a3b8' }
+                            { id: 'nouveau', label: 'Nouveau (Non Contacté)', color: 'var(--primary)' },
+                            { id: 'injoignable', label: 'Injoignable/ Ne répond pas', color: '#f59e0b' },
+                            { id: 'whatsapp_indisponible', label: 'WhatsApp Indisponible', color: '#94a3b8' }
                         ].map(st => {
-                            const count = leads.filter(l => (l.statusId || '').toLowerCase().includes(st.id)).length;
                             return (
                                 <div key={st.id} style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
                                     <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{st.label}</div>
-                                    <div style={{ fontSize: '2rem', fontWeight: 950, color: 'white' }}>{filteredLeads.filter(l => (l.statusId || '').toLowerCase().includes(st.id)).length}</div>
+                                    <div style={{ fontSize: '2rem', fontWeight: 950, color: 'white' }}>{
+                                        filteredLeads.filter(l => {
+                                            const sid = (l.statusId || '').toLowerCase();
+                                            const slabel = (l.status?.label || '').toLowerCase();
+                                            // Robust matching for "Non Contacté" / "Nouveau"
+                                            if (st.id === 'nouveau') return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
+                                            
+                                            // Robust matching for "Inscrit / Admis"
+                                            if (st.id === 'inscrit') return ['inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
+                                            if (st.id === 'admis') return sid === 'admis' || slabel.includes('admis');
+
+                                            // Label fallback match
+                                            return sid === st.id || slabel === st.label.toLowerCase() || (st.id === 'whatsapp_indisponible' && (slabel.includes('whatsapp') || sid.includes('whatsapp')));
+                                        }).length
+                                    }</div>
                                 </div>
                             );
                         })}
                     </div>
 
                     {showAllStatus && (
-                        <div style={{ marginTop: '2.5rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', animation: 'slideDown 0.3s ease-out' }}>
-                            {statuses.map(s => {
+                        <div className="stat-grid" style={{ marginTop: '2.5rem', gap: '1rem', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', animation: 'slideDown 0.3s ease-out' }}>
+                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => {
                                 return (
                                     <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                         <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '10px' }}>{s.label}</span>

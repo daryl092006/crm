@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp } from 'lucide-react';
+import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
 import type { Agent } from '../types';
-import CommunicationCenter from './CommunicationCenter';
 import { supabase } from '../supabaseClient';
-import { smartParsePhone, sanitizeForPostgres } from '../utils/verificationService';
+import { smartParsePhone, sanitizeForPostgres, resolveCityToCountry, resolveGeographicTruth, COUNTRIES_DB } from '../utils/verificationService';
 import { usePopup } from './Popup';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
@@ -23,27 +22,8 @@ interface AgentStatsModalProps {
     onRefresh?: () => Promise<void>;
 }
 
-// --- CONFIGURATION DE RÉFÉRENCE NATIONALE (ULTRA-PRÉCISE) ---
-const COUNTRIES_DB = [
-    { id: '221', name: 'Sénégal', keywords: ['SENEGAL', 'SEN', 'SN', 'DAKAR', 'THIES', 'SAINT-LOUIS'] },
-    { id: '225', name: 'Côte d\'Ivoire', keywords: ['COTE D IVOIRE', 'COTE D\'IVOIRE', 'IVORY COAST', 'CI', 'ABIDJAN', 'YAMOUSSOUKRO'] },
-    { id: '243', name: 'RDC', keywords: ['RDC', 'REPUBLIQUE DEMOCRATIQUE DU CONGO', 'CONGO KINSHASA', 'KINSHASA', 'ZAIRE', 'CONGO K', 'COD'] },
-    { id: '242', name: 'Congo-Brazzaville', keywords: ['CONGO BRAZZA', 'CONGO-BRAZZAVILLE', 'REPUBLIQUE DU CONGO', 'BRAZZAVILLE', 'COG', 'CONGO B'] },
-    { id: '212', name: 'Maroc', keywords: ['MAROC', 'MOROCCO', 'MAR', 'CASABLANCA', 'RABAT', 'MARRAKECH'] },
-    { id: '33', name: 'France', keywords: ['FRANCE', 'FR', 'FRA', 'PARIS'] },
-    { id: '237', name: 'Cameroun', keywords: ['CAMEROUN', 'CAMEROON', 'CMR', 'DOUALA', 'YAOUNDE'] },
-    { id: '241', name: 'Gabon', keywords: ['GABON', 'LIBREVILLE', 'GAB'] },
-    { id: '223', name: 'Mali', keywords: ['MALI', 'BAMAKO', 'MLI'] },
-    { id: '224', name: 'Guinée', keywords: ['GUINEE', 'CONAKRY', 'GUINEA'] },
-    { id: '228', name: 'Togo', keywords: ['TOGO', 'LOME', 'TG'] },
-    { id: '229', name: 'Bénin', keywords: ['BENIN', 'COTONOU', 'BJ'] },
-    { id: '226', name: 'Burkina Faso', keywords: ['BURKINA', 'OUAGADOUGOU', 'BF'] },
-    { id: '227', name: 'Niger', keywords: ['NIGER', 'NIAMEY', 'NE'] },
-    { id: '222', name: 'Mauritanie', keywords: ['MAURITANIE', 'NOUAKCHOTT', 'MR'] },
-    { id: '235', name: 'Tchad', keywords: ['TCHAD', 'CHAD', 'NDJAMENA', 'TD'] },
-    { id: '216', name: 'Tunisie', keywords: ['TUNISIE', 'TUNISIA'] },
-    { id: '213', name: 'Algérie', keywords: ['ALGERIE', 'ALGERIA'] }
-];
+// --- CONFIGURATION DE RÉFÉRENCE NATIONALE (Désormais centralisée dans verificationService) ---
+
 
 const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose, onRefresh }) => {
     const { addToast } = useToast();
@@ -59,106 +39,173 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
     const [isReassigning, setIsReassigning] = useState(false);
     const [showReassignDropdown, setShowReassignDropdown] = useState(false);
+    const [aiAlerts, setAiAlerts] = useState<{ type: 'duplicate' | 'format' | 'country'; count: number; details?: string[]; leadIds: string[] }[]>([]);
+    const [showAiDetails, setShowAiDetails] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [filterOnlyProblems, setFilterOnlyProblems] = useState<'duplicate' | 'format' | 'country' | null>(null);
+    const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
+
+    // --- LOGIQUE DE DONNÉES ET FILTRAGE STRATÉGIQUE ---
+    const filteredLeadsByCampaign = React.useMemo(() => {
+        return selectedCampaignTab === 'all' 
+            ? leads 
+            : leads.filter(l => String(l.campaignId) === String(selectedCampaignTab));
+    }, [leads, selectedCampaignTab]);
+
+    const stats = React.useMemo(() => {
+        const total = filteredLeadsByCampaign.length;
+        const nonContacted = filteredLeadsByCampaign.filter(l => {
+            const sid = (l.statusId || '').toLowerCase();
+            const slabel = (l.status?.label || '').toLowerCase();
+            return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
+        }).length;
+        const contacted = total - nonContacted;
+        const pasRepondu = filteredLeadsByCampaign.filter(l => {
+            const sid = (l.statusId || '').toLowerCase();
+            return sid === 'injoignable' || sid === 'repondeur' || (l.status?.label || '').toLowerCase().includes('injoignable');
+        }).length;
+        const reached = contacted - pasRepondu;
+        const inscribed = filteredLeadsByCampaign.filter(l => {
+            const sid = (l.statusId || '').toLowerCase();
+            const slabel = (l.status?.label || '').toLowerCase();
+            return ['admis', 'inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
+        }).length;
+        const conversion = reached > 0 ? Math.round((inscribed / reached) * 100) : 0;
+        const contact = total > 0 ? Math.round((contacted / total) * 100) : 0;
+        const avgScore = total > 0 ? Math.round(filteredLeadsByCampaign.reduce((acc, curr) => acc + (curr.score || 0), 0) / total) : 0;
+
+        const fieldCounts = filteredLeadsByCampaign.reduce((acc: any, curr) => {
+            const field = curr.fieldOfInterest || 'Non spécifié';
+            acc[field] = (acc[field] || 0) + 1;
+            return acc;
+        }, {});
+        const topFields = Object.entries(fieldCounts).sort(([, a]: any, [, b]: any) => b - a).slice(0, 3);
+
+        return { total, nonContacted, contacted, pasRepondu, reached, inscribed, conversion, contact, avgScore, topFields };
+    }, [filteredLeadsByCampaign]);
+
+    const { total: totalLeads, nonContacted: nonContactedCount, contacted: contactedLeadsCount, pasRepondu: pasReponduCount, inscribed: inscribedLeadsCount, conversion: conversionRate, contact: contactRate, avgScore, topFields } = stats;
+
+    // Reset pagination when filters change
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterStatus, filterCountry, selectedCampaignTab]);
 
     // Get unique campaigns present in this agent's leads
-    const agentCampaignIds = Array.from(new Set(leads.map(l => l.campaignId)));
-    const agentCampaigns = campaigns.filter(c => agentCampaignIds.includes(c.id));
+    const agentCampaignIds = React.useMemo(() => Array.from(new Set(leads.map(l => l.campaignId))), [leads]);
+    const agentCampaigns = React.useMemo(() => campaigns.filter(c => agentCampaignIds.includes(c.id)), [campaigns, agentCampaignIds]);
 
     // MOTEUR DE DÉTECTION SÉCURISÉ (ULTRA-PUISSANT)
-    const findCountryInfo = (countryStr: string, phoneStr: string) => {
+    const findCountryInfo = React.useCallback((countryStr: string, phoneStr: string) => {
         let p = (phoneStr || '').replace(/\D/g, '');
         if (p.startsWith('00')) p = p.substring(2);
         const c = (countryStr || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-
-        // 1. PRIORITÉ : Détection par le numéro (+INDICATIF gagne toujours)
         const sortedCountries = [...COUNTRIES_DB].sort((a, b) => b.id.length - a.id.length);
         for (const country of sortedCountries) {
             if (p.startsWith(country.id)) return country;
         }
-
-        // 2. SECONDAIRE : Détection par texte s'il n'y a pas d'indicatif dans le numéro
         for (const country of COUNTRIES_DB) {
             if (country.keywords.some(k => c === k || (c.length > 2 && c.includes(k)))) {
                 return country;
             }
         }
-
         return null;
-    };
+    }, []);
 
-    const formatIntelligentPhone = (phone: string, countryInfo: any) => {
+    const formatIntelligentPhone = React.useCallback((phone: string, countryInfo: any) => {
         if (!phone || phone === 'N/A') return phone;
-        
         let digits = phone.replace(/\D/g, '');
         if (digits.startsWith('00')) digits = digits.substring(2);
-
         const allPrefixes = COUNTRIES_DB.map(c => c.id).sort((a,b) => b.length - a.length);
-
-        // --- MACHINE À DÉCAPER (ANTI-EMPILEMENT) ---
-        // Si le numéro est anormalement long (> 13 chiffres)
         if (digits.length > 13) {
             for (const p1 of allPrefixes) {
                 if (digits.startsWith(p1)) {
                     const rest = digits.substring(p1.length);
-                    // On vérifie si ce qui suit commence AUSSI par un indicatif (ex: 242 suivi de 243)
                     for (const p2 of allPrefixes) {
                         if (rest.startsWith(p2)) {
-                            digits = rest; // On retire la "croûte" (le faux préfixe p1)
+                            digits = rest;
                             break;
                         }
                     }
                 }
             }
         }
-        
         if (countryInfo) {
             const prefix = countryInfo.id;
-            
-            // Protection anti-doublon simple (ex: 229229)
             if (digits.startsWith(prefix + prefix)) digits = digits.substring(prefix.length);
-
             if (digits.startsWith(prefix)) return '+' + digits;
             if (digits.startsWith('0')) return '+' + prefix + digits.substring(1);
             return '+' + prefix + digits;
         }
-
         return phone.startsWith('+') ? phone : '+' + digits;
-    };
+    }, []);
 
+    // --- SCAN IA AUTOMATIQUE (SILENCIEUX) ---
+    React.useEffect(() => {
+        if (!agent?.id) return;
+        
+        const scanLeads = () => {
+            let dups = 0;
+            let badFormats = 0;
+            let badCountries = 0;
+            const phones = new Map<string, string>(); 
+            
+            const duplicateNames: string[] = [];
+            const duplicateIds: string[] = [];
+            const formatErrorNames: string[] = [];
+            const formatErrorIds: string[] = [];
+            const countryErrorNames: string[] = [];
+            const countryErrorIds: string[] = [];
+            
+            filteredLeadsByCampaign.forEach(l => {
+                const smart = smartParsePhone(l.phone);
+                
+                // Detection Format
+                if (smart.primary !== l.phone && smart.primary !== '') {
+                    badFormats++;
+                    formatErrorNames.push(`${l.firstName} ${l.lastName} (${l.phone} ➔ ${smart.primary})`);
+                    formatErrorIds.push(l.id);
+                }
+
+                // Detection Pays (Système Elite Triangulation)
+                const geo = resolveGeographicTruth(smart.detectedCountry, l.country, l.city, smart.isExplicit);
+                
+                if (geo.winner && geo.winner !== l.country) {
+                    const currentC = (l.country || '').trim();
+                    const isWeak = !currentC || ['SÉNÉGAL', 'SENEGAL', 'AUTRE', 'INCONNU', 'N/A', 'VIDE', 'NONE'].includes(currentC.toUpperCase());
+
+                    if (isWeak || (geo.status === 'coherence')) {
+                        badCountries++;
+                        countryErrorNames.push(`${l.firstName} ${l.lastName} (${currentC || 'Vide'} ➔ ${geo.winner})`);
+                        countryErrorIds.push(l.id);
+                    }
+                }
+
+                // Detection Doublons
+                const clean = smart.primary.replace(/\D/g, '');
+                if (clean && clean.length > 5) {
+                    if (phones.has(clean)) {
+                        dups++;
+                        duplicateNames.push(`${l.firstName} ${l.lastName} (Doublon de ${phones.get(clean)})`);
+                        duplicateIds.push(l.id);
+                    } else {
+                        phones.set(clean, `${l.firstName} ${l.lastName}`);
+                    }
+                }
+            });
+
+            const alerts: any[] = [];
+            if (dups > 0) alerts.push({ type: 'duplicate', count: dups, details: duplicateNames, leadIds: duplicateIds });
+            if (badFormats > 0) alerts.push({ type: 'format', count: badFormats, details: formatErrorNames, leadIds: formatErrorIds });
+            if (badCountries > 0) alerts.push({ type: 'country', count: badCountries, details: countryErrorNames, leadIds: countryErrorIds });
+            setAiAlerts(alerts);
+        };
+
+        scanLeads();
+    }, [filteredLeadsByCampaign, agent?.id]);
 
     if (!agent) return null;
-
-    // --- LOGIQUE DE DONNÉES STRICTE ---
-    const totalLeads = leads.length;
-    
-    const contactedLeadsCount = leads.filter(l => {
-        const sid = (l.statusId || '').toLowerCase();
-        return sid !== 'nouveau' && sid !== '';
-    }).length;
-
-    const nonContactedCount = totalLeads - contactedLeadsCount;
-    
-    const pasReponduCount = leads.filter(l => {
-        const sid = (l.statusId || '').toLowerCase();
-        return sid === 'injoignable' || sid === 'repondeur';
-    }).length;
-
-    const reachedLeadsCount = contactedLeadsCount - pasReponduCount;
-    
-    const inscribedLeadsCount = leads.filter(l => 
-        ['admis', 'inscription_attente', 'inscrit'].some(k => (l.statusId || '').toLowerCase().includes(k))
-    ).length;
-    
-    const conversionRate = reachedLeadsCount > 0 ? Math.round((inscribedLeadsCount / reachedLeadsCount) * 100) : 0;
-    const contactRate = totalLeads > 0 ? Math.round((contactedLeadsCount / totalLeads) * 100) : 0;
-    const avgScore = totalLeads > 0 ? Math.round(leads.reduce((acc, curr) => acc + (curr.score || 0), 0) / totalLeads) : 0;
-
-    const fieldCounts = leads.reduce((acc: any, curr) => {
-        const field = curr.fieldOfInterest || 'Non spécifié';
-        acc[field] = (acc[field] || 0) + 1;
-        return acc;
-    }, {});
-    const topFields = Object.entries(fieldCounts).sort(([, a]: any, [, b]: any) => b - a).slice(0, 3);
 
     const handleUpdateStatus = async (leadId: string, newStatusId: string) => {
         const lead = leads.find(l => l.id === leadId);
@@ -263,6 +310,47 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         }
     };
 
+    const handleSmartAutoBalance = async () => {
+        if (selectedLeadIds.length === 0) return;
+        const availableAgents = agents.filter(a => a.id !== agent?.id);
+        if (availableAgents.length === 0) return addToast("Aucun autre agent disponible.", "error");
+
+        const confirmed = await showConfirm(
+            "IA Smart Balance",
+            `L'IA va répartir équitablement ${selectedLeadIds.length} prospects entre les ${availableAgents.length} autres agents. Continuer ?`
+        );
+        if (!confirmed) return;
+
+        setIsReassigning(true);
+        try {
+            const leadsPerAgent = Math.ceil(selectedLeadIds.length / availableAgents.length);
+            
+            for (let i = 0; i < availableAgents.length; i++) {
+                const targetAgent = availableAgents[i];
+                const start = i * leadsPerAgent;
+                const chunk = selectedLeadIds.slice(start, start + leadsPerAgent);
+                if (chunk.length === 0) break;
+
+                const { error } = await supabase
+                    .from('leads')
+                    .update({ agent_id: targetAgent.id })
+                    .in('id', chunk);
+                
+                if (error) throw error;
+            }
+
+            addToast(`${selectedLeadIds.length} prospects répartis intelligemment !`, "success");
+            if (onRefresh) await onRefresh();
+            else if (onClose) onClose();
+            setSelectedLeadIds([]);
+            setShowReassignDropdown(false);
+        } catch (error) {
+            addToast("Erreur lors de la répartition IA.", "error");
+        } finally {
+            setIsReassigning(false);
+        }
+    };
+
     const handleSelectAll = (filteredLeads: any[]) => {
         if (selectedLeadIds.length === filteredLeads.length) {
             setSelectedLeadIds([]);
@@ -277,8 +365,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const handleMassHarmonize = async () => {
         const confirmed = await showConfirm(
-            "Nettoyage IA & Mise à jour des Statuts", 
-            `L'Assistant IA va :\n1. Fusionner les fiches en double (même numéro)\n2. Corriger les formats (Bénin +22901, indicatifs, etc.)\n3. Nettoyer les caractères spéciaux et doublons invisibles\n\nContinuer le nettoyage profond ?`
+            "Nettoyage IA & Fusion des Doublons", 
+            `L'Assistant IA va :\n1. SUPPRIMER définitivement les fiches en double (même numéro)\n2. Corriger les formats (Bénin +229, indicatifs, etc.)\n3. Uniformiser les identités (NOMS en majuscules, Prénoms propres)\n4. Nettoyer les pays et les caractères invisibles\n\nCette action est irréversible pour les doublons. Continuer ?`
         );
         
         if (!confirmed) return;
@@ -286,33 +374,36 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         setIsHarmonizing(true);
         let updatedCount = 0;
         let mergedCount = 0;
-        const seenPhones = new Map<string, string>(); // phone -> firstLeadId
+        const seenPhones = new Map<string, boolean>(); 
+        const leadsToDelete: string[] = [];
+        const allUpdates: any[] = [];
 
         try {
-            // ÉTAPE 1 : RÉPARER ET DÉTECTER LES DOUBLONS
-            // On fait une copie locale pour le traitement
             const currentLeads = [...leads];
             
             for (const lead of currentLeads) {
-                // Utilisation de l'IA unifiée (verificationService)
                 const smart = smartParsePhone(lead.phone);
                 const formattedPhone = smart.primary;
                 const cleanKey = formattedPhone.replace(/\D/g, '');
 
-                // GESTION DES DOUBLONS (IA-Powered)
-                if (cleanKey && cleanKey.length > 5) {
-                    if (seenPhones.has(cleanKey)) {
-                        // C'est un doublon !
-                        await supabase.from('leads').delete().eq('id', lead.id);
-                        mergedCount++;
-                        continue;
-                    }
-                    seenPhones.set(cleanKey, lead.id);
-                }
-                
                 const updates: any = {};
                 let hasChanges = false;
 
+                const emailKey = (lead.email || '').trim().toLowerCase();
+
+                if ((cleanKey && cleanKey.length > 5) || (emailKey && emailKey.includes('@'))) {
+                    const isDuplicate = (cleanKey && cleanKey.length > 5 && seenPhones.has(cleanKey)) || 
+                                      (emailKey && emailKey.includes('@') && seenPhones.has(emailKey));
+
+                    if (isDuplicate) {
+                        leadsToDelete.push(lead.id);
+                        mergedCount++;
+                        continue;
+                    }
+                    if (cleanKey && cleanKey.length > 5) seenPhones.set(cleanKey, true);
+                    if (emailKey && emailKey.includes('@')) seenPhones.set(emailKey, true);
+                }
+                
                 if (formattedPhone !== lead.phone && formattedPhone !== '') {
                     updates.phone = formattedPhone;
                     if (smart.note) {
@@ -321,55 +412,129 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     hasChanges = true;
                 }
 
-                // Nettoyage PostgreSQL (Unicode invisible)
-                const sanitizedLead = sanitizeForPostgres(lead);
-                if (JSON.stringify(sanitizedLead) !== JSON.stringify(lead)) {
-                    Object.assign(updates, sanitizedLead);
-                    hasChanges = true;
+                const geo = resolveGeographicTruth(smart.detectedCountry, lead.country, lead.city, smart.isExplicit);
+
+                if (geo.status === 'coherence' && geo.winner) {
+                    if (geo.winner !== lead.country) {
+                        updates.country = geo.winner;
+                        hasChanges = true;
+                    }
+
+                    const cityInfo = resolveCityToCountry(lead.country || '');
+                    if (cityInfo && !lead.city) {
+                        updates.city = lead.country;
+                        hasChanges = true;
+                    }
+
+                    const targetDb = COUNTRIES_DB.find(c => c.name === geo.winner);
+                    const currentPhoneDb = COUNTRIES_DB.find(c => smart.detectedCountry && c.name === smart.detectedCountry);
+                    
+                    if (targetDb) {
+                        let phoneDigits = (updates.phone || lead.phone).replace(/\D/g, '');
+                        if (currentPhoneDb && phoneDigits.startsWith(currentPhoneDb.id)) {
+                            const newPhone = '+' + targetDb.id + phoneDigits.substring(currentPhoneDb.id.length);
+                            if (newPhone !== (updates.phone || lead.phone)) { updates.phone = newPhone; hasChanges = true; }
+                        } else if (!smart.isExplicit && !smart.detectedCountry && phoneDigits.length >= 6) {
+                            // Nettoyage du 0 initial pour les numéros locaux (Ex: 097... -> +24397...)
+                            // On exige au moins 6 chiffres pour éviter de transformer des erreurs (#ERROR!) en indicatifs seuls
+                            const localNumber = phoneDigits.startsWith('0') ? phoneDigits.substring(1) : phoneDigits;
+                            const newPhone = '+' + targetDb.id + localNumber;
+                            if (newPhone !== (updates.phone || lead.phone)) { updates.phone = newPhone; hasChanges = true; }
+                        }
+                    }
                 }
 
+                const cleanFirst = (lead.firstName || '').trim().split(' ').map((s: any) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+                const cleanLast = (lead.lastName || '').trim().toUpperCase();
+                if (cleanFirst && cleanFirst !== lead.firstName) { updates.firstName = cleanFirst; hasChanges = true; }
+                if (cleanLast && cleanLast !== lead.lastName) { updates.lastName = cleanLast; hasChanges = true; }
+
+                const cleanEmail = (lead.email || '').trim().toLowerCase();
+                if (cleanEmail && cleanEmail !== lead.email) { updates.email = cleanEmail; hasChanges = true; }
+
+                // --- COLLECTE DES CHANGEMENTS RÉELS ---
                 if (hasChanges) {
-                    await supabase.from('leads').update(sanitizeForPostgres(updates)).eq('id', lead.id);
+                    // On ne garde que les champs CRM purs pour l'update
+                    const cleanUpdates: any = {};
+                    if (updates.firstName !== undefined) cleanUpdates.first_name = updates.firstName;
+                    if (updates.lastName !== undefined) cleanUpdates.last_name = updates.lastName;
+                    if (updates.email !== undefined) cleanUpdates.email = updates.email;
+                    if (updates.phone !== undefined) cleanUpdates.phone = updates.phone;
+                    if (updates.country !== undefined) cleanUpdates.country = updates.country;
+                    if (updates.city !== undefined) cleanUpdates.city = updates.city;
+                    if (updates.notes !== undefined) cleanUpdates.notes = updates.notes;
+
+                    allUpdates.push({ id: lead.id, data: cleanUpdates });
                     updatedCount++;
                 }
             }
 
-            addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés.`, "success");
+            // EXÉCUTION DES SUPPRESSIONS (DOUBLONS)
+            if (leadsToDelete.length > 0) {
+                const { error: delError } = await supabase
+                    .from('leads')
+                    .delete()
+                    .in('id', leadsToDelete);
+                if (delError) throw delError;
+            }
+
+            // EXÉCUTION DES MISES À JOUR PAR LOTS DE 20
+            const CHUNK_SIZE = 20;
+            for (let i = 0; i < allUpdates.length; i += CHUNK_SIZE) {
+                const chunk = allUpdates.slice(i, i + CHUNK_SIZE);
+                await Promise.all(chunk.map(async (item) => {
+                    const payload = sanitizeForPostgres(item.data);
+                    if (!payload || Object.keys(payload).length === 0) return;
+
+                    const { error } = await supabase
+                        .from('leads')
+                        .update(payload)
+                        .eq('id', item.id);
+                    
+                    if (error) {
+                        console.error(`Erreur Lead ${item.id}:`, error.message);
+                        throw error;
+                    }
+                }));
+            }
+
+            addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés définitivement.`, "success");
             if (onRefresh) await onRefresh();
             else if (onClose) onClose(); 
-        } catch (error) {
-            console.error(error);
-            addToast("Erreur lors du nettoyage profond.", "error");
+        } catch (error: any) {
+            console.error("Détail Erreur IA:", error);
+            addToast(`Erreur : ${error?.message || "Échec du nettoyage IA"}`, "error");
         } finally {
             setIsHarmonizing(false);
         }
     };
 
     return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: '1.5rem' }} onClick={onClose}>
-            <div className="card" style={{ width: '100%', maxWidth: '98vw', maxHeight: '96vh', overflowY: 'auto', background: '#0a0b0d', borderRadius: '32px', border: '1px solid rgba(255,255,255,0.1)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: window.innerWidth < 768 ? '0' : '1.5rem' }} onClick={onClose}>
+            <div className="card" style={{ width: '100%', maxWidth: '100vw', height: window.innerWidth < 768 ? '100vh' : '96vh', maxHeight: '100vh', overflowY: 'auto', background: '#0a0b0d', borderRadius: window.innerWidth < 768 ? '0' : '32px', border: '1px solid rgba(255,255,255,0.1)' }} onClick={e => e.stopPropagation()}>
                 
-                <div style={{ padding: '2rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-                        <div style={{ width: '74px', height: '74px', borderRadius: '22px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: any) => n[0]).join('') : '?'}</div>
+                <div style={{ padding: window.innerWidth < 768 ? '1.5rem' : '2rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth < 768 ? '0.75rem' : '2rem' }}>
+                        <div style={{ width: window.innerWidth < 768 ? '40px' : '74px', height: window.innerWidth < 768 ? '40px' : '74px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: window.innerWidth < 768 ? '1rem' : '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: any) => n[0]).join('') : '?'}</div>
                         <div>
-                            <h2 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Centre de Performance : {agent?.name || 'Inconnu'}</h2>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '1.125rem' }}>Vue stratégique 360° • Statistiques en temps réel</p>
+                            <h2 style={{ fontSize: window.innerWidth < 768 ? '1.25rem' : '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{window.innerWidth < 768 ? 'Performance' : `Centre de Performance : ${agent?.name || 'Inconnu'}`}</h2>
+                            <p style={{ color: 'var(--text-muted)', fontSize: window.innerWidth < 768 ? '0.75rem' : '1.125rem' }}>Vue stratégique 360° • Temps réel</p>
                         </div>
                     </div>
 
-                    <button onClick={onClose} style={{ width: '50px', height: '50px', borderRadius: '15px', background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={30} /></button>
+                    <button onClick={onClose} style={{ width: window.innerWidth < 768 ? '40px' : '50px', height: window.innerWidth < 768 ? '40px' : '50px', borderRadius: '15px', background: 'rgba(255,255,255,0.05)', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={window.innerWidth < 768 ? 24 : 30} /></button>
                 </div>
 
-                <div style={{ padding: '2.5rem 3rem' }}>
+                <div style={{ padding: window.innerWidth < 768 ? '1rem' : '2.5rem 3rem' }}>
+
                     
                     {/* LES 5 INDICATEURS MAÎTRES */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1.5rem', marginBottom: '3rem' }}>
+                    <div className="stat-grid" style={{ marginBottom: '3rem' }}>
                         {[
                             { label: 'Inscrits', color: 'var(--success)', icon: <CheckCircle2 size={24} />, count: inscribedLeadsCount, detail: 'Résultat final' },
                             { label: 'Pas Répondu', color: '#f59e0b', icon: <PhoneOff size={24} />, count: pasReponduCount, detail: 'Appels sans réponse' },
                             { label: 'Contactés', color: '#10b981', icon: <UserCheck size={24} />, count: contactedLeadsCount, detail: 'Statut ≠ Nouveau' },
-                            { label: 'Non Contactés', color: '#ef4444', icon: <Zap size={24} />, count: nonContactedCount, detail: 'Statut = Nouveau' },
+                            { label: 'Non Contactés', color: '#ef4444', icon: <Zap size={24} />, count: nonContactedCount, detail: 'Statut = Non Contacté' },
                             { label: 'Total Dossiers', color: 'var(--primary)', icon: <Users size={24} />, count: totalLeads, detail: 'Portefeuille total' }
                         ].map((s, i) => (
                             <div key={i} style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', borderRadius: '28px', border: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
@@ -381,14 +546,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     </div>
 
                     {/* ANALYTICS COMPLEXE */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem', marginBottom: '3.5rem' }}>
+                    <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '3.5rem' }}>
                         
-                        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '32px', padding: '2.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '32px', padding: window.innerWidth < 768 ? '1.5rem' : '2.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem' }}>
                                 <Activity size={24} color="var(--primary)" />
-                                <h3 style={{ fontSize: '1.75rem', fontWeight: 900 }}>Analyse de l'efficacité</h3>
+                                <h3 style={{ fontSize: window.innerWidth < 768 ? '1.25rem' : '1.75rem', fontWeight: 900 }}>Efficacité</h3>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '2rem' }}>
+                            <div className="stat-grid" style={{ gap: '2rem' }}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Taux de Conversion</div>
                                     <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--success)' }}>{conversionRate}<span style={{fontSize: '1rem'}}>%</span></div>
@@ -434,6 +599,59 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             </div>
                         </div>
                     </div>
+
+                    {/* IA ASSISTANT AUTOMATIQUE BANNER */}
+                    {aiAlerts.length > 0 && (
+                        <div style={{
+                            background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))',
+                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            borderRadius: '24px',
+                            padding: '1.5rem',
+                            marginBottom: '3rem',
+                            boxShadow: '0 10px 30px -10px rgba(0,0,0,0.5)',
+                            animation: 'fadeIn 0.5s ease'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                    <div style={{ 
+                                        width: '48px', 
+                                        height: '48px', 
+                                        borderRadius: '14px', 
+                                        background: 'linear-gradient(135deg, var(--primary), var(--accent))', 
+                                        display: 'grid', 
+                                        placeItems: 'center',
+                                        boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)'
+                                    }}>
+                                        <Sparkles size={24} color="white" />
+                                    </div>
+                                    <div>
+                                        <h4 style={{ fontWeight: 800, margin: 0, fontSize: '1rem', color: 'white' }}>Assistant IA Elite</h4>
+                                        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)' }}>
+                                            Détection : {aiAlerts.map(a => `${a.count} ${a.type === 'duplicate' ? 'doublons' : 'erreurs de format'}`).join(' et ')}.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    {aiAlerts.length > 0 && (
+                                        <button 
+                                            onClick={() => setShowAiDetails(!showAiDetails)}
+                                            style={{ color: 'white', border: '1px solid rgba(255,255,255,0.1)', padding: '0.6rem 1rem', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600 }}
+                                        >
+                                            {showAiDetails ? 'Masquer' : 'Voir les Détails'}
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={handleMassHarmonize}
+                                        disabled={isHarmonizing}
+                                        className="btn btn-primary" 
+                                        style={{ padding: '0.6rem 1.2rem', borderRadius: '12px', fontSize: '0.85rem' }}
+                                    >
+                                        {isHarmonizing ? 'Nettoyage...' : 'Tout Nettoyer'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* ONGLETS DE CAMPAGNRE (Multi-campagnes detectées) */}
                     {(agentCampaigns.length > 1 || selectedCampaignTab !== 'all') && (
@@ -501,13 +719,25 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             {[
                                 { id: 'inscrit', label: 'Inscrit', color: 'var(--success)' },
                                 { id: 'admis', label: 'Admis', color: 'var(--accent)' },
-                                { id: 'interesse', label: 'Intéressé', color: 'var(--primary)' },
-                                { id: 'rappel', label: 'Rappel', color: 'var(--warning)' }
+                                { id: 'nouveau', label: 'Nouveau (Non Contacté)', color: 'var(--primary)' },
+                                { id: 'injoignable', label: 'Injoignable/ Ne répond pas', color: '#f59e0b' },
+                                { id: 'whatsapp_indisponible', label: 'WhatsApp Indisponible', color: '#94a3b8' }
                             ].map(st => {
-                                const count = leads.filter(l => 
-                                    (l.statusId || '').toLowerCase().includes(st.id) && 
-                                    (selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab)
-                                ).length;
+                                const count = filteredLeadsByCampaign.filter(l => {
+                                    const sid = (l.statusId || '').toLowerCase();
+                                    const slabel = (l.status?.label || '').toLowerCase();
+                                    
+                                    // Robust matching
+                                    if (st.id === 'nouveau') {
+                                        return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
+                                    }
+                                    
+                                    if (st.id === 'inscrit') return ['inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
+                                    if (st.id === 'admis') return sid === 'admis' || slabel.includes('admis');
+
+                                    // Match by ID or Label (case-insensitive and partial for WhatsApp)
+                                    return sid === st.id || slabel === st.label.toLowerCase() || (st.id === 'whatsapp_indisponible' && (slabel.includes('whatsapp') || sid.includes('whatsapp')));
+                                }).length;
                                 return (
                                     <div key={st.id} style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
                                         <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{st.label}</div>
@@ -519,7 +749,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                         {showAllStatus && (
                             <div style={{ marginTop: '2.5rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', animation: 'slideDown 0.3s ease-out' }}>
-                                {statuses.map(s => {
+                                {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => {
                                     const count = leads.filter(l => 
                                         l.statusId === s.id && 
                                         (selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab)
@@ -566,7 +796,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
                                         >
                                             <option value="all">Tous les Statuts</option>
-                                            {statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                         </select>
                                     </div>
                                     <div style={{ position: 'relative' }}>
@@ -624,11 +854,11 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             </div>
                         </div>
 
-                        <div style={{ background: 'rgba(255,255,255,0.01)', borderRadius: '36px', border: '1px solid rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <div className="table-container">
+                            <table>
                                 <thead>
-                                    <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                                        <th style={{ padding: '1.75rem', width: '50px' }}>
+                                    <tr>
+                                        <th style={{ width: '50px' }}>
                                             <button 
                                                 onClick={() => {
                                                     const filteredItems = leads.filter(l => {
@@ -653,8 +883,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {([...leads]
-                                        .filter(l => {
+                                    {(() => {
+                                        const filtered = leads.filter(l => {
                                             const matchesSearch = 
                                                 (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                                                 (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -663,9 +893,19 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                             const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
                                             const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
+                                            
+                                            // ISOLATION IA
+                                            if (filterOnlyProblems) {
+                                                const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as any;
+                                                if (!currentAlert?.leadIds?.includes(l.id)) return false;
+                                            }
+
                                             return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
-                                        })
-                                        .sort((a,b) => (b.score || 0) - (a.score || 0)))
+                                        }).sort((a,b) => (b.score || 0) - (a.score || 0));
+
+                                        const startIndex = (currentPage - 1) * itemsPerPage;
+                                        return filtered.slice(startIndex, startIndex + itemsPerPage);
+                                    })()
                                         .map((lead: any) => {
                                         const phase = getPhaseLabel(lead);
                                         const countryInfo = findCountryInfo(lead.country, lead.phone);
@@ -674,7 +914,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                         const isFailed = (sid.includes('injoignable') || sid.includes('repondeur'));
                                         
                                         return (
-                                            <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.2s', background: selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className="hover-row">
+                                            <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.4s ease', background: highlightedLeadId === lead.id ? 'rgba(99, 102, 241, 0.15)' : selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className={`hover-row ${highlightedLeadId === lead.id ? 'highlighted-row' : ''}`}>
                                                 <td style={{ padding: '1.75rem', textAlign: 'center' }}>
                                                     <button 
                                                         onClick={() => toggleLeadSelection(lead.id)}
@@ -683,38 +923,38 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                         {selectedLeadIds.includes(lead.id) ? <CheckSquare size={22} /> : <Square size={22} />}
                                                     </button>
                                                 </td>
-                                                <td style={{ padding: '1.75rem' }}>
+                                                <td>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                                                         <div style={{ fontWeight: 900, fontSize: '1.25rem' }}>{lead.firstName} {lead.lastName}</div>
                                                         {lead.metadata?.everReached && <div style={{ fontSize: '0.7rem', background: 'rgba(34, 197, 94, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontWeight: 900 }}>Contact OK</div>}
                                                     </div>
                                                     <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>{lead.email}</div>
                                                 </td>
-                                                <td style={{ padding: '1.75rem' }}>
+                                                <td>
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                        <CommunicationCenter 
-                                                            phone={intelligentPhone} 
-                                                            label={intelligentPhone} 
-                                                            onAction={(type) => { if (type === 'Appel' || type === 'WhatsApp') setSelectedLeadForOutcome(lead); }} 
-                                                        />
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontWeight: 800, fontSize: '1rem', color: 'white' }}>{intelligentPhone}</span>
+                                                    </div>
                                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                            📍 {countryInfo ? countryInfo.name : (lead.country || 'Pays inconnu')}
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td style={{ padding: '1.75rem' }}>
+                                                <td>
                                                     <div style={{ fontSize: '0.75rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>{phase}</div>
                                                     <div style={{ fontWeight: 800, fontSize: '1.125rem' }}>{lead.status?.label || lead.statusId}</div>
                                                 </td>
-                                                <td style={{ padding: '1.75rem' }}>
+                                                <td>
                                                     <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
-                                                        {statuses.map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                        {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map((s: any) => (
+                                                            <option key={s.id} value={s.id}>{s.label}</option>
+                                                        ))}
                                                     </select>
                                                 </td>
-                                                <td style={{ padding: '1.75rem', textAlign: 'center' }}>
+                                                <td style={{ textAlign: 'center' }}>
                                                     <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
                                                 </td>
-                                                <td style={{ padding: '1.75rem' }}>
+                                                <td>
                                                      <div 
                                                         onClick={() => setSelectedLeadForHistory(lead)} 
                                                         style={{ 
@@ -748,6 +988,69 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* PAGINATION ELITE */}
+                        {(() => {
+                            const filtered = leads.filter(l => {
+                                const matchesSearch = 
+                                    (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                    (l.phone || '').includes(searchQuery);
+                                const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
+                                const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
+                                const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
+
+                                if (filterOnlyProblems) {
+                                    const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as any;
+                                    if (!currentAlert?.leadIds?.includes(l.id)) return false;
+                                }
+
+                                return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
+                            });
+                            const totalPages = Math.ceil(filtered.length / itemsPerPage);
+
+                            return (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', padding: '0 1rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
+                                        <select 
+                                            value={itemsPerPage} 
+                                            onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                            className="input"
+                                            style={{ padding: '0 10px', borderRadius: '12px', height: '40px', minWidth: '120px', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)' }}
+                                        >
+                                            {[10, 20, 50, 100].map(v => <option key={v} value={v}>{v} par page</option>)}
+                                        </select>
+                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>sur {filtered.length} prospects</span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <button 
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(p => p - 1)}
+                                            style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
+                                        >
+                                            <ChevronLeft size={20} />
+                                        </button>
+                                        
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontWeight: 900, color: 'var(--primary)', fontSize: '1.1rem' }}>{currentPage}</span>
+                                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
+                                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{totalPages || 1}</span>
+                                        </div>
+
+                                        <button 
+                                            disabled={currentPage === totalPages || totalPages === 0}
+                                            onClick={() => setCurrentPage(p => p + 1)}
+                                            style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: (currentPage === totalPages || totalPages === 0) ? 'rgba(255,255,255,0.1)' : 'white', cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
+                                        >
+                                            <ChevronRight size={20} />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </div>
 
@@ -826,9 +1129,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                         <div style={{ padding: '15px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                                             <button 
                                                 style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', border: 'none', borderRadius: '15px', color: 'white', fontWeight: 950, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4)' }}
-                                                onClick={() => addToast("L'IA balance la charge de travail...", "info")}
+                                                onClick={handleSmartAutoBalance}
                                             >
-                                                <Sparkles size={18} /> IA Smart Balance
+                                                <Sparkles size={18} /> Lancement IA Auto-Balance
                                             </button>
                                         </div>
                                     </div>
@@ -887,6 +1190,120 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         }
                     }}
                 />
+
+                {/* ELITE AI DIAGNOSTIC SIDE PANEL */}
+                <div className={`ai-side-panel ${showAiDetails ? 'open' : ''}`} onClick={e => e.stopPropagation()}>
+                    <div className="ai-side-panel-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            <div style={{ padding: '10px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', borderRadius: '12px', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)' }}>
+                                <Sparkles size={20} color="white" />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>Elite Resolution</h3>
+                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Diagnostic Intelligence</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowAiDetails(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                            <X size={20} />
+                        </button>
+                    </div>
+
+                    <div className="ai-side-panel-content">
+                        {aiAlerts.map((alert, aIdx) => (
+                            <div key={aIdx} style={{ marginBottom: '2.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                    <h5 style={{ fontSize: '0.85rem', fontWeight: 900, color: alert.type === 'duplicate' ? 'var(--warning)' : alert.type === 'format' ? 'var(--accent)' : '#10b981', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        {alert.type === 'duplicate' ? <Users size={16} /> : alert.type === 'format' ? <Zap size={16} /> : <Globe size={16} />}
+                                        {alert.type === 'duplicate' ? 'DOUBLONS DÉTECTÉS' : alert.type === 'format' ? 'ERREURS DE FORMAT' : 'UNIFORMISATION PAYS'}
+                                    </h5>
+                                    <div className={`ai-badge ${alert.type === 'duplicate' ? 'ai-badge-duplicate' : alert.type === 'format' ? 'ai-badge-format' : 'ai-badge-country'}`}>
+                                        {alert.count} cas
+                                    </div>
+                                </div>
+
+                                {alert.details?.map((detail: string, idx: number) => {
+                                    const nameMatch = detail.split('(')[0].trim();
+                                    return (
+                                        <div key={idx} className="diagnostic-card" onClick={() => {
+                                            const leadId = alert.leadIds[idx];
+                                            setHighlightedLeadId(leadId);
+                                            setTimeout(() => setHighlightedLeadId(null), 3000);
+
+                                            // On filtre le tableau pour montrer ce prospect précis si pas déjà filtré
+                                            if (!filterOnlyProblems) {
+                                                setSearchQuery(nameMatch);
+                                            }
+                                            
+                                            const tableElement = document.querySelector('.table-container');
+                                            if (tableElement) tableElement.scrollIntoView({ behavior: 'smooth' });
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: '4px' }}>{nameMatch}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
+                                                        {detail.includes('➔') ? detail.split('(')[1].replace(')', '') : detail}
+                                                    </div>
+                                                </div>
+                                                <button style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 800 }}>
+                                                    VOIR
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                <button 
+                                    onClick={() => setFilterOnlyProblems(filterOnlyProblems === alert.type ? null : alert.type)}
+                                    style={{ 
+                                        marginTop: '1rem',
+                                        width: '100%',
+                                        padding: '14px',
+                                        background: filterOnlyProblems === alert.type ? 'var(--primary)' : 'rgba(99, 102, 241, 0.1)',
+                                        border: '1px solid ' + (filterOnlyProblems === alert.type ? 'var(--primary)' : 'rgba(99, 102, 241, 0.2)'),
+                                        borderRadius: '15px',
+                                        color: filterOnlyProblems === alert.type ? 'white' : 'var(--primary)',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '10px'
+                                    }}
+                                >
+                                    <Filter size={16} />
+                                    {filterOnlyProblems === alert.type ? 'DÉSACTIVER FOCUS' : `ACTIVER FOCUS SUR LES ${alert.count} CAS`}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="ai-side-panel-footer">
+                        <button 
+                            onClick={handleMassHarmonize}
+                            disabled={isHarmonizing}
+                            style={{ 
+                                width: '100%', 
+                                padding: '1.25rem', 
+                                borderRadius: '18px', 
+                                background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                                border: 'none',
+                                color: 'white',
+                                fontWeight: 900,
+                                fontSize: '1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '12px',
+                                boxShadow: '0 10px 25px rgba(99, 102, 241, 0.3)',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            {isHarmonizing ? <Activity size={20} className="animate-spin" /> : <Sparkles size={20} />}
+                            {isHarmonizing ? 'HARMONISATION...' : 'TOUT NETTOYER MAINTENANT'}
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

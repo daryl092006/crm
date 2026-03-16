@@ -8,7 +8,8 @@ export type DispositionType =
     | 'admis' | 'inscription_attente' | 'inscrit' | 'reorientation'
     | 'pas_interesse' | 'refus_categorique' | 'inscrit_ailleurs' | 'pas_moyens' 
     | 'annee_prochaine' | 'pas_disponible' | 'hors_cible' | 'refus_repondre'
-    | 'injoignable' | 'repondeur' | 'faux_numero';
+    | 'injoignable' | 'repondeur' | 'faux_numero' | 'whatsapp_indisponible'
+    | 'nouveau';
 
 interface OutcomeModalProps {
     isOpen: boolean;
@@ -54,7 +55,7 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             case 'dossier_recu':
                 newStatusId = 'dossier_recu';
                 scoreIncrement = 80;
-                dispositionLabel = "Dossiers reçus";
+                dispositionLabel = "Dossier reçu";
                 break;
             case 'admis':
                 newStatusId = 'admis';
@@ -89,7 +90,7 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             case 'inscrit_ailleurs':
                 newStatusId = 'inscrit_ailleurs';
                 scoreIncrement = -30;
-                dispositionLabel = "Déjà inscrit ailleurs";
+                dispositionLabel = "Inscrit ailleurs";
                 break;
             case 'pas_moyens':
                 newStatusId = 'pas_moyens';
@@ -109,7 +110,7 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             case 'hors_cible':
                 newStatusId = 'hors_cible';
                 scoreIncrement = -100;
-                dispositionLabel = "Hors-cible";
+                dispositionLabel = "Hors cible";
                 break;
             case 'refus_repondre':
                 newStatusId = 'refus_repondre';
@@ -118,7 +119,12 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                 break;
             case 'injoignable':
                 newStatusId = isCurrentlyPositive ? lead.statusId : 'injoignable';
-                dispositionLabel = "Injoignable / ne répond pas";
+                dispositionLabel = "Injoignable/ Ne répond pas";
+                break;
+            case 'whatsapp_indisponible':
+                newStatusId = isCurrentlyPositive ? lead.statusId : 'whatsapp_indisponible';
+                dispositionLabel = "Numéro non disponible sur WhatsApp.";
+                scoreIncrement = -5;
                 break;
             case 'repondeur':
                 newStatusId = isCurrentlyPositive ? lead.statusId : 'repondeur';
@@ -127,7 +133,12 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             case 'faux_numero':
                 newStatusId = 'faux_numero';
                 scoreIncrement = -200;
-                dispositionLabel = "Numéro incorrect / faux numéro";
+                dispositionLabel = "Faux Numéro";
+                break;
+            case 'nouveau':
+                newStatusId = 'nouveau';
+                scoreIncrement = 0;
+                dispositionLabel = "Non Contacté";
                 break;
         }
 
@@ -172,10 +183,10 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             items: [
                 { id: 'intéressé', label: 'Intéressé', icon: <Target size={16} /> },
                 { id: 'rappel', label: 'Rappel ou en cours', icon: <Clock size={16} /> },
-                { id: 'rendez_vous_pris', label: 'Rendez-vous planifié.', icon: <CheckCircle2 size={16} /> },
+                { id: 'rendez_vous_pris', label: 'Rendez-vous planifié', icon: <CheckCircle2 size={16} /> },
                 { id: 'reflexion', label: 'Réflexion et nous faire un retour', icon: <AlertCircle size={16} /> },
                 { id: 'reorientation', label: 'Réorientation', icon: <Users size={16} /> },
-                { id: 'dossier_recu', label: 'Dossiers reçus', icon: <TrendingUp size={16} /> },
+                { id: 'dossier_recu', label: 'Dossier reçu', icon: <TrendingUp size={16} /> },
                 { id: 'admis', label: 'Admis', icon: <Award size={16} /> },
                 { id: 'inscription_attente', label: 'Inscription en attente', icon: <Clock size={16} /> },
                 { id: 'inscrit', label: 'Inscrit', icon: <Sparkles size={16} /> },
@@ -187,11 +198,11 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             items: [
                 { id: 'pas_interesse', label: 'Pas intéressé', icon: <XCircle size={16} /> },
                 { id: 'refus_categorique', label: 'Refus catégorique', icon: <XCircle size={16} /> },
-                { id: 'inscrit_ailleurs', label: 'Déjà inscrit ailleurs', icon: <Users size={16} /> },
+                { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', icon: <Users size={16} /> },
                 { id: 'pas_moyens', label: 'Pas les moyens', icon: <TrendingUp size={16} /> },
                 { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', icon: <Clock size={16} /> },
                 { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', icon: <Clock size={16} /> },
-                { id: 'hors_cible', label: 'Hors-cible', icon: <AlertCircle size={16} /> },
+                { id: 'hors_cible', label: 'Hors cible', icon: <AlertCircle size={16} /> },
                 { id: 'refus_repondre', label: 'Refus de répondre', icon: <XCircle size={16} /> },
             ]
         },
@@ -199,12 +210,23 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             title: 'ÉCHECS TECHNIQUES',
             color: 'var(--text-muted)',
             items: [
-                { id: 'injoignable', label: 'Injoignable / ne répond pas', icon: <PhoneOff size={16} /> },
+                { id: 'injoignable', label: 'Injoignable/ Ne répond pas', icon: <PhoneOff size={16} /> },
                 { id: 'repondeur', label: 'Répondeur', icon: <Mail size={16} /> },
-                { id: 'faux_numero', label: 'Numéro incorrect / faux numéro', icon: <Trash2 size={16} /> },
+                { id: 'faux_numero', label: 'Faux Numéro', icon: <Trash2 size={16} /> },
+                { id: 'whatsapp_indisponible', label: 'Numéro non disponible sur WhatsApp.', icon: <XCircle size={16} /> },
+            ]
+        },
+        {
+            title: 'ADMINISTRATION / RESET',
+            color: 'var(--primary)',
+            items: [
+                { id: 'nouveau', label: 'Non Contacté', icon: <Users size={16} /> },
             ]
         }
-    ];
+    ].map(section => ({
+        ...section,
+        items: section.title === 'ADMINISTRATION / RESET' ? section.items : [...section.items].sort((a, b) => a.label.localeCompare(b.label))
+    }));
 
     return (
         <div style={{
