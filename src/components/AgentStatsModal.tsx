@@ -3,12 +3,13 @@ import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, A
 import type { Agent } from '../types';
 import CommunicationCenter from './CommunicationCenter';
 import { supabase } from '../supabaseClient';
-// import removed
+import { smartParsePhone, sanitizeForPostgres } from '../utils/verificationService';
 import { usePopup } from './Popup';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
 import OutcomeModal from './OutcomeModal';
 import LeadHistoryModal from './LeadHistoryModal';
+
 
 
 interface AgentStatsModalProps {
@@ -19,6 +20,7 @@ interface AgentStatsModalProps {
     agents: Agent[];
     campaigns: any[];
     onClose: () => void;
+    onRefresh?: () => Promise<void>;
 }
 
 // --- CONFIGURATION DE RÉFÉRENCE NATIONALE (ULTRA-PRÉCISE) ---
@@ -43,7 +45,7 @@ const COUNTRIES_DB = [
     { id: '213', name: 'Algérie', keywords: ['ALGERIE', 'ALGERIA'] }
 ];
 
-const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose }) => {
+const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose, onRefresh }) => {
     const { addToast } = useToast();
     const { showConfirm } = usePopup();
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
@@ -163,7 +165,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         if (!lead) return;
         const sid = newStatusId.toLowerCase();
         const isDialogue = !['nouveau', 'injoignable', 'repondeur', 'faux_numero'].some(k => sid.includes(k));
-        const newMetadata = { ...(lead.metadata || {}), everReached: lead.metadata?.everReached || isDialogue };
+        const newMetadata = sanitizeForPostgres({ ...(lead.metadata || {}), everReached: lead.metadata?.everReached || isDialogue });
         const newStatus = statuses.find(s => s.id === newStatusId);
         setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
         await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
@@ -276,7 +278,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     const handleMassHarmonize = async () => {
         const confirmed = await showConfirm(
             "Nettoyage IA & Mise à jour des Statuts", 
-            `L'Assistant IA va :\n1. Fusionner les fiches en double (même numéro)\n2. Corriger les pays via les indicatifs et villes\n3. Migrer les anciens statuts vers la nouvelle structure\n\nContinuer le nettoyage profond ?`
+            `L'Assistant IA va :\n1. Fusionner les fiches en double (même numéro)\n2. Corriger les formats (Bénin +22901, indicatifs, etc.)\n3. Nettoyer les caractères spéciaux et doublons invisibles\n\nContinuer le nettoyage profond ?`
         );
         
         if (!confirmed) return;
@@ -288,16 +290,19 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
         try {
             // ÉTAPE 1 : RÉPARER ET DÉTECTER LES DOUBLONS
-            for (const lead of leads) {
-                const countryInfo = findCountryInfo(lead.country, lead.phone);
-                const standardizedCountry = countryInfo ? countryInfo.name : lead.country;
-                const formattedPhone = formatIntelligentPhone(lead.phone, countryInfo);
+            // On fait une copie locale pour le traitement
+            const currentLeads = [...leads];
+            
+            for (const lead of currentLeads) {
+                // Utilisation de l'IA unifiée (verificationService)
+                const smart = smartParsePhone(lead.phone);
+                const formattedPhone = smart.primary;
                 const cleanKey = formattedPhone.replace(/\D/g, '');
 
-                // GESTION DES DOUBLONS (Logique GPT)
+                // GESTION DES DOUBLONS (IA-Powered)
                 if (cleanKey && cleanKey.length > 5) {
                     if (seenPhones.has(cleanKey)) {
-                        // C'est un doublon ! On supprime la fiche actuelle et on garde la première
+                        // C'est un doublon !
                         await supabase.from('leads').delete().eq('id', lead.id);
                         mergedCount++;
                         continue;
@@ -308,23 +313,30 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 const updates: any = {};
                 let hasChanges = false;
 
-                if (formattedPhone !== lead.phone && formattedPhone !== 'N/A') {
+                if (formattedPhone !== lead.phone && formattedPhone !== '') {
                     updates.phone = formattedPhone;
+                    if (smart.note) {
+                        updates.notes = (lead.notes || '') + (lead.notes ? ' | ' : '') + smart.note;
+                    }
                     hasChanges = true;
                 }
 
-                if (standardizedCountry !== lead.country) {
-                    updates.country = standardizedCountry;
+                // Nettoyage PostgreSQL (Unicode invisible)
+                const sanitizedLead = sanitizeForPostgres(lead);
+                if (JSON.stringify(sanitizedLead) !== JSON.stringify(lead)) {
+                    Object.assign(updates, sanitizedLead);
                     hasChanges = true;
                 }
 
                 if (hasChanges) {
-                    await supabase.from('leads').update(updates).eq('id', lead.id);
+                    await supabase.from('leads').update(sanitizeForPostgres(updates)).eq('id', lead.id);
                     updatedCount++;
                 }
             }
+
             addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés.`, "success");
-            if (onClose) onClose(); // Rafraîchir
+            if (onRefresh) await onRefresh();
+            else if (onClose) onClose(); 
         } catch (error) {
             console.error(error);
             addToast("Erreur lors du nettoyage profond.", "error");
@@ -837,12 +849,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         if (!selectedLeadForHistory) return;
                         const { data: interactionData, error } = await supabase
                             .from('lead_interactions')
-                            .insert({
+                            .insert(sanitizeForPostgres({
                                 lead_id: selectedLeadForHistory.id,
                                 agent_id: agent.id,
                                 type: 'note',
                                 content: content
-                            })
+                            }))
                             .select()
                             .single();
 

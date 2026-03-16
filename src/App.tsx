@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import Campaigns from './components/Campaigns'
@@ -11,14 +11,24 @@ import './index.css'
 import { ToastProvider } from './components/Toast'
 import OnboardingTour from './components/OnboardingTour'
 import { PopupProvider } from './components/Popup'
+import { Menu, X, Target } from 'lucide-react';
 
 function App() {
   // --- BYPASS AUTH MODE ---
   const [activeTab, setActiveTab] = useState(localStorage.getItem('crm_active_tab') || 'dashboard')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false) // New state for sidebar visibility
 
   useEffect(() => {
     localStorage.setItem('crm_active_tab', activeTab);
   }, [activeTab]);
+
+  // New useEffect to close sidebar on mobile when activeTab changes
+  useEffect(() => {
+    if (window.innerWidth < 768) { // Assuming 768px is the breakpoint for mobile
+      setIsSidebarOpen(false);
+    }
+  }, [activeTab]);
+
   const [leads, setLeads] = useState<StudentLead[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
@@ -311,7 +321,46 @@ function App() {
     <ToastProvider>
       <PopupProvider>
         <OnboardingTour />
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        
+        {/* MOBILE HEADER */}
+        <div className="mobile-header">
+           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{
+                    width: '32px',
+                    height: '32px',
+                    background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                    borderRadius: '8px',
+                    display: 'grid',
+                    placeItems: 'center'
+                }}>
+                    <Target size={18} color="white" />
+                </div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>EliteCRM</h2>
+            </div>
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+            >
+              {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+        </div>
+
+        {/* OVERLAY FOR MOBILE */}
+        <div 
+          className={`overlay ${isSidebarOpen ? 'show' : ''}`} 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+
+        <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+          <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={(tab) => {
+              setActiveTab(tab);
+              setIsSidebarOpen(false);
+            }} 
+          />
+        </div>
+
         <main className="main-content">
           {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} statuses={statuses} />}
           {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}

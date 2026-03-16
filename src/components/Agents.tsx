@@ -264,6 +264,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 agents={agents}
                 campaigns={campaigns}
                 onClose={() => setSelectedAgent(null)}
+                onRefresh={onRefresh}
             />
 
             <AddAgentModal

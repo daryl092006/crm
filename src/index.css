@@ -45,7 +45,8 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: 1000;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .main-content {
@@ -53,14 +54,34 @@ body {
   margin-left: 260px;
   padding: 2.5rem;
   min-height: 100vh;
+  transition: all 0.3s ease;
 }
 
+/* Base Card & Layout improvements */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  width: 100%;
+}
+
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.01);
+  scrollbar-width: thin;
+}
+
+.table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
 }
 
 .glass-card {
@@ -390,4 +411,105 @@ tr:hover td {
 @keyframes pulse-loading {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(0.98); }
+}
+
+/* --- RESPONSIVE DESIGN --- */
+
+/* Mobile Toggle Button */
+.mobile-header {
+  display: none;
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-sidebar);
+  padding: 1rem 1.5rem;
+  z-index: 900;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  justify-content: space-between;
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1.5rem;
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  /* Dashboard Adjustments */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Grid Layouts in Modals */
+  form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Better spacing for mobile */
+  .main-content > div {
+    gap: 1.5rem !important;
+  }
+}
+
+/* Tablet Optimizations */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Utility Classes */
+.no-scroll {
+  overflow: hidden;
+}
+
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 950;
+  backdrop-filter: blur(4px);
+}
+
+.overlay.show {
+  display: block;
 }

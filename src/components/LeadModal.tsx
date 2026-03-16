@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { StudentLead, Campaign, Agent, StudyField } from '../types';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
+import { sanitizeForPostgres } from '../utils/verificationService';
 import { getBestAgentForLead } from '../utils/assignmentService';
 
 interface LeadModalProps {
@@ -42,22 +43,24 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
             return;
         }
 
-        const dbLead = {
-            first_name: newLead.firstName,
-            last_name: newLead.lastName,
-            email: newLead.email,
-            phone: newLead.phone,
-            country: newLead.country,
-            city: newLead.city,
-            field_of_interest: newLead.fieldOfInterest,
-            study_level: newLead.level,
-            status_id: newLead.statusId || 'nouveau',
-            campaign_id: newLead.campaignId,
-            agent_id: selectedA.id,
-            organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
-        };
-
-        const { data, error } = await supabase.from('leads').insert(dbLead).select().single();
+        const { data, error } = await supabase
+            .from('leads')
+            .insert(sanitizeForPostgres({
+                first_name: newLead.firstName,
+                last_name: newLead.lastName,
+                email: newLead.email,
+                phone: newLead.phone,
+                country: newLead.country,
+                city: newLead.city,
+                field_of_interest: newLead.fieldOfInterest,
+                study_level: newLead.level,
+                status_id: newLead.statusId || 'nouveau',
+                campaign_id: newLead.campaignId,
+                agent_id: selectedA.id,
+                organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
+            }))
+            .select()
+            .single();
 
         if (error) {
             addToast("Erreur lors de la création : " + error.message, "error");

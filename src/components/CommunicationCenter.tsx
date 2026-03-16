@@ -10,7 +10,14 @@ interface CommunicationCenterProps {
 
 const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label, status = 'Inconnu', onAction }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth <= 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     const normalizedDigits = phone.replace(/\D/g, ''); // Uniquement les chiffres pour WhatsApp
     const fullInternational = phone.startsWith('+') ? phone : `+${phone}`; // Format complet avec +
@@ -98,28 +105,49 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
                 )}
             </button>
 
+            {isOpen && isMobile && (
+                <div 
+                    className="overlay show" 
+                    onClick={() => setIsOpen(false)} 
+                    style={{ zIndex: 1100 }}
+                />
+            )}
+
             {isOpen && (
                 <div style={{
-                    position: 'absolute',
-                    top: '100%',
+                    position: isMobile ? 'fixed' : 'absolute',
+                    top: isMobile ? 'auto' : '100%',
+                    bottom: isMobile ? 0 : 'auto',
+                    left: isMobile ? 0 : 'auto',
                     right: 0,
                     background: 'var(--bg-card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '12px',
-                    padding: '8px',
-                    zIndex: 1000,
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                    minWidth: '200px',
-                    marginTop: '8px'
+                    border: isMobile ? 'none' : '1px solid var(--border)',
+                    borderTopLeftRadius: isMobile ? '24px' : '12px',
+                    borderTopRightRadius: isMobile ? '24px' : '12px',
+                    borderRadius: isMobile ? '24px 24px 0 0' : '12px',
+                    padding: isMobile ? '1.5rem' : '8px',
+                    zIndex: 1200,
+                    boxShadow: isMobile ? '0 -10px 40px rgba(0,0,0,0.6)' : '0 10px 25px rgba(0,0,0,0.3)',
+                    minWidth: isMobile ? '100%' : '200px',
+                    marginTop: isMobile ? 0 : '8px',
+                    animation: isMobile ? 'slideUp 0.3s ease-out' : 'none'
                 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 8px' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Contact & Vérification</span>
-                        <X size={14} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsOpen(false)} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '1.5rem' : '8px', padding: '0 8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: isMobile ? '1.1rem' : '0.75rem', fontWeight: 800, color: 'white' }}>Contact & Actions</span>
+                            {isMobile && <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>{phone}</span>}
+                        </div>
+                        <button 
+                            onClick={() => setIsOpen(false)}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'white' }}
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
 
-                    <div style={{ padding: '8px', marginBottom: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                            <div style={{ fontSize: '0.75rem' }}>Statut: <span style={{ color: getStatusColor(), fontWeight: 600 }}>{status === 'Valide' ? 'Format Valide' : status}</span></div>
+                    <div style={{ padding: isMobile ? '1rem' : '8px', marginBottom: isMobile ? '1.5rem' : '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <div style={{ fontSize: isMobile ? '0.9rem' : '0.75rem' }}>Statut: <span style={{ color: getStatusColor(), fontWeight: 600 }}>{status === 'Valide' ? 'Format Valide' : status}</span></div>
                             {status !== 'WhatsApp' && (
                                 <button
                                     onClick={handleVerifySync}
@@ -127,9 +155,9 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
                                         background: 'rgba(255,255,255,0.1)',
                                         border: 'none',
                                         color: 'white',
-                                        padding: '4px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.7rem',
+                                        padding: '6px 12px',
+                                        borderRadius: '8px',
+                                        fontSize: isMobile ? '0.8rem' : '0.7rem',
                                         cursor: 'pointer'
                                     }}
                                 >
@@ -145,24 +173,24 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
                                     background: '#25D366',
                                     border: 'none',
                                     color: 'white',
-                                    padding: '6px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.9rem',
+                                    fontWeight: 750,
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    gap: '4px'
+                                    gap: '8px'
                                 }}
                             >
-                                <MessageCircle size={14} />
+                                <MessageCircle size={18} />
                                 Confirmer sur WhatsApp
                             </button>
                         )}
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {actions.map(action => (
                             <a
                                 key={action.id}
@@ -174,18 +202,29 @@ const CommunicationCenter: React.FC<CommunicationCenterProps> = ({ phone, label,
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '8px 12px',
-                                    borderRadius: '8px',
+                                    gap: '14px',
+                                    padding: '14px 18px',
+                                    borderRadius: '14px',
                                     color: 'white',
                                     textDecoration: 'none',
-                                    fontSize: '0.875rem',
-                                    transition: 'background 0.2s ease'
+                                    fontSize: '1rem',
+                                    fontWeight: 600,
+                                    background: isMobile ? 'rgba(255,255,255,0.02)' : 'transparent',
+                                    transition: 'all 0.2s ease',
+                                    border: isMobile ? '1px solid rgba(255,255,255,0.03)' : 'none'
                                 }}
-                                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                             >
-                                <div style={{ color: action.color }}>{action.icon}</div>
+                                <div style={{ 
+                                    width: '36px', 
+                                    height: '36px', 
+                                    borderRadius: '10px', 
+                                    background: `${action.color}15`, 
+                                    display: 'grid', 
+                                    placeItems: 'center',
+                                    color: action.color 
+                                }}>
+                                    {action.icon}
+                                </div>
                                 {action.label}
                             </a>
                         ))}

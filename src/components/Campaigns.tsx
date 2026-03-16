@@ -8,7 +8,7 @@ import { usePopup } from './Popup';
 import { useState } from 'react';
 import AddCampaignModal from './AddCampaignModal';
 import LeadExportModal from './LeadExportModal';
-import { smartParsePhone } from '../utils/verificationService';
+import { smartParsePhone, sanitizeForPostgres } from '../utils/verificationService';
 
 
 
@@ -49,7 +49,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
         else localStorage.removeItem('crm_selected_campaign_id');
     };
 
-    const validateCSV = (rows: string[][], campaign: Campaign): { valid: boolean; errors: string[]; leads: any[] } => {
+    const validateCSV = (rows: any[][], campaign: Campaign, worksheet?: XLSX.WorkSheet): { valid: boolean; errors: string[]; leads: any[] } => {
         const errors: string[] = [];
         const importedLeads: any[] = [];
         const normalize = (s: any) => s ? s.toString().toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
@@ -88,14 +88,36 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
         const currentLeadsForAssignment = [...leads];
 
-        rows.slice(headerRowIdx + 1).forEach((rawCols, index) => {
+        rows.slice(headerRowIdx + 1).forEach((rawCols, rowIndex) => {
             if (!rawCols || rawCols.length === 0) return;
 
             const getVal = (field: string) => {
                 const idx = fieldToIdx[field];
                 if (idx === undefined || idx === -1 || idx >= rawCols.length) return "";
-                const val = rawCols[idx];
-                return val === null || val === undefined ? "" : String(val).trim();
+                
+                let val = rawCols[idx];
+                
+                // --- RÉCUPÉRATION DE SAUVETAGE SI ERREUR ---
+                // Si la valeur est une erreur Excel (#ERROR!), on tente de lire la formule brute
+                if (val === '#ERROR!' && worksheet) {
+                    // rowIndex here is relative to the sliced array, so we need to add headerRowIdx + 1
+                    const absoluteRowIndex = headerRowIdx + 1 + rowIndex;
+                    const address = XLSX.utils.encode_cell({ r: absoluteRowIndex, c: idx });
+                    const cell = worksheet[address];
+                    if (cell && cell.f) {
+                        // Si c'est une formule type ="771234567", on extrait le contenu
+                        val = cell.f.replace(/^[\s=]+/, '').replace(/^"(.*)"$/, '$1');
+                    }
+                }
+
+                if (val === null || val === undefined) return "";
+                
+                let strVal = String(val).trim();
+                // Nettoyage agressif des résidus de calcul Excel
+                if (strVal.startsWith('=') || strVal.startsWith('+=')) {
+                    strVal = strVal.replace(/^[\+=]+/, '').trim();
+                }
+                return strVal;
             };
 
             let email = getVal('email');
@@ -121,7 +143,9 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 // Si la ligne a quand même des données (ex: un nom ou un tel), on ne bloque pas
                 const hasName = getVal('firstName') || getVal('lastName');
                 if (hasName || (phone !== "00000000" && phone !== "")) {
-                    email = `prospect-${Math.random().toString(36).substring(7)}@elite-placeholder.com`;
+                    // Utilisation d'un email déterministe basé sur le téléphone pour éviter les doublons lors des ré-imports
+                    const phoneId = phone.replace(/\D/g, '') || Math.random().toString(36).substring(7);
+                    email = `prospect-${phoneId}@elite-placeholder.com`;
                 } else {
                     // Si vraiment rien de significatif, on ignore la ligne sans erreur
                     return;
@@ -166,7 +190,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
             importedLeads.push(newLead);
             currentLeadsForAssignment.push({
-                id: `tmp-${index}`,
+                id: `tmp-${rowIndex}`,
                 firstName: newLead.first_name,
                 lastName: newLead.last_name,
                 email: newLead.email,
@@ -192,14 +216,23 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
         const reader = new FileReader();
         reader.onload = async (event) => {
             const data = new Uint8Array(event.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
+            const workbook = XLSX.read(data, { 
+                type: 'array',
+                cellFormula: true, // IMPORTANT: Lire les formules pour pouvoir les analyser en cas d'erreur
+                cellText: true
+            });
             const sheetName = workbook.SheetNames[0];
-            const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 }) as string[][];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { 
+                header: 1,
+                raw: true, // Lire la valeur réelle (v)
+                defval: '' 
+            }) as any[][];
 
             const campaign = campaigns.find(c => c.id === campaignId);
             if (!campaign) return;
 
-            const result = validateCSV(rows, campaign);
+            const result = validateCSV(rows, campaign, worksheet);
 
             if (!result.valid) {
                 addToast(`Erreur de format : ${result.errors.join(', ')}`, "error");
@@ -207,12 +240,53 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             } else if (result.leads.length === 0) {
                 addToast("Le fichier semble vide ou ne contient aucun prospect valide.", "error");
             } else {
-                const { error } = await supabase.from('leads').insert(result.leads);
-                if (error) {
-                    addToast("Erreur lors de l'insertion en base : " + error.message, "error");
+                let sanitizedLeads = sanitizeForPostgres(result.leads);
+                
+                // --- DÉDUPLICATION LOCALE (Évite l'erreur 'cannot affect row a second time') ---
+                // Si le fichier contient plusieurs fois le même email, on ne garde que le dernier
+                const uniqueLeadsMap = new Map();
+                sanitizedLeads.forEach(l => uniqueLeadsMap.set(l.email, l));
+                sanitizedLeads = Array.from(uniqueLeadsMap.values());
+
+                // --- STRATÉGIE DE SAUVETAGE (UPSERT MANUEL) ---
+                // On récupère les emails existants pour savoir quoi mettre à jour vs quoi insérer
+                const { data: existingLeads } = await supabase
+                    .from('leads')
+                    .select('id, email')
+                    .in('email', sanitizedLeads.map(l => l.email));
+
+                const existingEmailsMap = new Map(existingLeads?.map(l => [l.email, l.id]));
+                
+                const toInsert: any[] = [];
+                const toUpdate: any[] = [];
+
+                sanitizedLeads.forEach((lead: any) => {
+                    const existingId = existingEmailsMap.get(lead.email);
+                    if (existingId) {
+                        toUpdate.push({ ...lead, id: existingId });
+                    } else {
+                        toInsert.push(lead);
+                    }
+                });
+
+                let globalError = null;
+
+                // 1. Insertion des nouveaux
+                if (toInsert.length > 0) {
+                    const { error } = await supabase.from('leads').insert(toInsert);
+                    if (error) globalError = error;
+                }
+
+                // 2. Mise à jour des existants (Upsert par ID, qui est toujours une contrainte unique)
+                if (toUpdate.length > 0) {
+                    const { error } = await supabase.from('leads').upsert(toUpdate);
+                    if (error) globalError = error;
+                }
+
+                if (globalError) {
+                    addToast("Erreur lors de l'importation : " + globalError.message, "error");
                 } else {
-                    addToast(`${result.leads.length} prospects importés avec succès !`, "success");
-                    // Refresh data without full page reload
+                    addToast(`${sanitizedLeads.length} prospects traités (${toInsert.length} nouveaux, ${toUpdate.length} mis à jour) !`, "success");
                     if (onRefresh) await onRefresh();
                 }
             }
@@ -235,14 +309,14 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
         const { data, error } = await supabase
             .from('campaigns')
-            .insert({
+            .insert(sanitizeForPostgres({
                 name: campaignData.name,
                 source: campaignData.source,
                 column_mappings: campaignData.column_mappings,
                 agent_id: selectedA.id,
                 start_date: new Date().toISOString(),
                 organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
-            })
+            }))
             .select().single();
 
         if (error) {
