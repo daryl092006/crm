@@ -84,10 +84,10 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 alignItems: 'flex-start'
             }}>
                 {[
-                    { name: "QUALIFICATION", keywords: ['non contacte', 'interesse', 'rappel', 'refus', 'perdu', 'injoignable', 'faux', 'hors cible'] },
-                    { name: "INFORMATION", keywords: ['info', 'whatsapp', 'brochure', 'rdv', 'visite', 'reunion'] },
-                    { name: "CANDIDATURE", keywords: ['dossier'] },
-                    { name: "DÉCISION", keywords: ['admis', 'refuse', 'inscrit', 'abandon', 'report'] }
+                    { name: "QUALIFICATION", keywords: ['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible'] },
+                    { name: "INFORMATION", keywords: ['interesse', 'rappel', 'reflexion', 'reorientation'] },
+                    { name: "CANDIDATURE", keywords: ['rdv_planifie', 'dossier_recu'] },
+                    { name: "DÉCISION", keywords: ['admis', 'inscription_attente', 'inscrit'] }
                 ].map((phase) => {
                     const phaseStatuses = statuses.filter(s => 
                         phase.keywords.some(k => s.id.toLowerCase().includes(k) || s.label.toLowerCase().includes(k))
@@ -158,7 +158,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                                                                     outline: 'none'
                                                                 }}
                                                             >
-                                                                {statuses.filter(s => ['nouveau', 'interesse', 'rdv_planifie', 'dossier_recu', 'admis', 'inscrit', 'pas_interesse', 'hors_cible', 'injoignable'].includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                                    {statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                                             </select>
                                                             <MoreHorizontal size={14} color="var(--text-muted)" />
                                                         </div>

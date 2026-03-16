@@ -60,6 +60,7 @@ export interface StudentLead {
     metadata?: Record<string, any>;
     lastInteractionAt: string;
     createdAt: string;
+    phoneVerification?: 'Valide' | 'Invalide' | 'Inconnu';
 
     // Virtual fields (dynamically loaded)
     status?: LeadStatus;

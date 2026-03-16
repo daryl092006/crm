@@ -1,13 +1,14 @@
 import React from 'react';
-import { Target, CheckCircle2, XCircle, Clock, Trash2, Mail, Users, AlertCircle, TrendingUp } from 'lucide-react';
+import { Target, CheckCircle2, XCircle, Clock, Trash2, Mail, Users, AlertCircle, TrendingUp, Award, Sparkles, PhoneOff } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 
 export type DispositionType = 
-    | 'intéressé' | 'rappel_demande' | 'refus_temporaire' | 'refus_definitif' 
-    | 'inscrit_ailleurs' | 'injoignable' | 'repondeur' | 'faux_numero' | 'hors_cible'
-    | 'rendez_vous_pris' | 'infos_envoyees' | 'whatsapp_envoye' | 'visite_campus'
-    | 'dossier_demande' | 'dossier_envoye' | 'dossier_recu' | 'frais_payes';
+    | 'intéressé' | 'rappel' | 'reflexion' | 'rendez_vous_pris' | 'dossier_recu' 
+    | 'admis' | 'inscription_attente' | 'inscrit' | 'reorientation'
+    | 'pas_interesse' | 'refus_categorique' | 'inscrit_ailleurs' | 'pas_moyens' 
+    | 'annee_prochaine' | 'pas_disponible' | 'hors_cible' | 'refus_repondre'
+    | 'injoignable' | 'repondeur' | 'faux_numero';
 
 interface OutcomeModalProps {
     isOpen: boolean;
@@ -26,85 +27,112 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
         let scoreIncrement = 0;
         let dispositionLabel = "";
 
-        // Scoring & Status Logic (Intelligent Transitions)
-        const isCurrentlyPositive = ['interesse', 'rdv_planifie', 'infos_envoyees', 'whatsapp_envoye', 'visite_campus', 'dossier_demande', 'dossier_recu', 'frais_payes', 'admis', 'inscrit'].includes(lead.statusId);
+        // Scoring & Status Logic
+        const isCurrentlyPositive = ['interesse', 'rappel', 'rdv_planifie', 'dossier_recu', 'admis', 'inscription_attente', 'inscrit'].includes(lead.statusId);
         
         switch(disposition) {
             case 'intéressé':
                 newStatusId = 'interesse';
-                scoreIncrement = 10;
+                scoreIncrement = 20;
                 dispositionLabel = "Intéressé";
+                break;
+            case 'rappel':
+                newStatusId = 'rappel';
+                scoreIncrement = 5;
+                dispositionLabel = "Rappel ou en cours";
+                break;
+            case 'reflexion':
+                newStatusId = 'reflexion';
+                scoreIncrement = 10;
+                dispositionLabel = "Réflexion et nous faire un retour";
                 break;
             case 'rendez_vous_pris':
                 newStatusId = 'rdv_planifie';
-                scoreIncrement = 40;
-                dispositionLabel = "Rendez-vous planifié";
-                break;
-            case 'rappel_demande':
-                newStatusId = 'rappel_demande';
-                scoreIncrement = 5;
-                dispositionLabel = "Rappel demandé";
-                break;
-            case 'infos_envoyees':
-                newStatusId = 'infos_envoyees';
-                scoreIncrement = 20;
-                dispositionLabel = "Informations envoyées";
-                break;
-            case 'whatsapp_envoye':
-                newStatusId = 'whatsapp_envoye';
-                scoreIncrement = 15;
-                dispositionLabel = "WhatsApp envoyé";
-                break;
-            case 'visite_campus':
-                newStatusId = 'visite_campus';
-                scoreIncrement = 45;
-                dispositionLabel = "Visite campus prévue";
-                break;
-            case 'dossier_demande':
-                newStatusId = 'dossier_demande';
                 scoreIncrement = 50;
-                dispositionLabel = "Dossier demandé";
+                dispositionLabel = "Rendez-vous planifié";
                 break;
             case 'dossier_recu':
                 newStatusId = 'dossier_recu';
-                scoreIncrement = 100;
-                dispositionLabel = "Dossier reçu (complet)";
+                scoreIncrement = 80;
+                dispositionLabel = "Dossiers reçus";
                 break;
-            case 'frais_payes':
-                newStatusId = 'frais_payes';
+            case 'admis':
+                newStatusId = 'admis';
+                scoreIncrement = 120;
+                dispositionLabel = "Admis";
+                break;
+            case 'inscription_attente':
+                newStatusId = 'inscription_attente';
                 scoreIncrement = 150;
-                dispositionLabel = "Frais de dossier payés";
+                dispositionLabel = "Inscription en attente";
                 break;
-            case 'refus_definitif':
-                newStatusId = 'refus_definitif';
-                dispositionLabel = "Refus définitif";
+            case 'inscrit':
+                newStatusId = 'inscrit';
+                scoreIncrement = 250;
+                dispositionLabel = "Inscrit";
+                break;
+            case 'reorientation':
+                newStatusId = 'reorientation';
+                scoreIncrement = 15;
+                dispositionLabel = "Réorientation";
+                break;
+            case 'pas_interesse':
+                newStatusId = 'pas_interesse';
+                scoreIncrement = -10;
+                dispositionLabel = "Pas intéressé";
+                break;
+            case 'refus_categorique':
+                newStatusId = 'refus_categorique';
+                scoreIncrement = -50;
+                dispositionLabel = "Refus catégorique";
                 break;
             case 'inscrit_ailleurs':
                 newStatusId = 'inscrit_ailleurs';
-                dispositionLabel = "Inscrit ailleurs";
+                scoreIncrement = -30;
+                dispositionLabel = "Déjà inscrit ailleurs";
+                break;
+            case 'pas_moyens':
+                newStatusId = 'pas_moyens';
+                scoreIncrement = -20;
+                dispositionLabel = "Pas les moyens";
+                break;
+            case 'annee_prochaine':
+                newStatusId = 'annee_prochaine';
+                scoreIncrement = 5;
+                dispositionLabel = "S’inscrire l’année prochaine";
+                break;
+            case 'pas_disponible':
+                newStatusId = 'pas_disponible';
+                scoreIncrement = -5;
+                dispositionLabel = "Pas disponible / contrainte de temps";
                 break;
             case 'hors_cible':
                 newStatusId = 'hors_cible';
-                dispositionLabel = "Hors cible";
+                scoreIncrement = -100;
+                dispositionLabel = "Hors-cible";
+                break;
+            case 'refus_repondre':
+                newStatusId = 'refus_repondre';
+                scoreIncrement = -40;
+                dispositionLabel = "Refus de répondre";
                 break;
             case 'injoignable':
-                // REGLE CRUCIALE : Si on a déjà parlé au prospect (statut positif), 
-                // on ne le remet pas en "Injoignable" s'il ne répond pas à un rappel.
                 newStatusId = isCurrentlyPositive ? lead.statusId : 'injoignable';
-                dispositionLabel = "Injoignable";
+                dispositionLabel = "Injoignable / ne répond pas";
                 break;
             case 'repondeur':
-                newStatusId = isCurrentlyPositive ? lead.statusId : 'injoignable';
+                newStatusId = isCurrentlyPositive ? lead.statusId : 'repondeur';
                 dispositionLabel = "Répondeur";
                 break;
             case 'faux_numero':
                 newStatusId = 'faux_numero';
-                dispositionLabel = "Faux numéro";
+                scoreIncrement = -200;
+                dispositionLabel = "Numéro incorrect / faux numéro";
                 break;
         }
 
         const isFailedContact = ['injoignable', 'repondeur', 'faux_numero'].includes(disposition);
-        const newScore = (lead.score || 0) + scoreIncrement;
+        const newScore = Math.max(0, (lead.score || 0) + scoreIncrement);
         const newMetadata = { 
             ...(lead.metadata || {}), 
             everReached: lead.metadata?.everReached || !isFailedContact 
@@ -126,11 +154,11 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                 lead_id: lead.id,
                 agent_id: lead.agentId,
                 type: 'note',
-                content: `Résultat de l'appel : ${dispositionLabel}. Score +${scoreIncrement}`
+                content: `Qualif : ${dispositionLabel} (Score ${scoreIncrement > 0 ? '+' : ''}${scoreIncrement})`
             });
 
             onUpdate(lead.id, { statusId: newStatusId, score: newScore, metadata: newMetadata });
-            addToast(`Disposition "${dispositionLabel}" enregistrée (+${scoreIncrement} pts)`, "success");
+            addToast(`"${dispositionLabel}" enregistré`, "success");
             onClose();
         } catch (error: any) {
             addToast(error.message, "error");
@@ -139,35 +167,41 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
 
     const sections = [
         {
-            title: 'POSITIF',
+            title: 'AVANCEMENT POSITIF',
             color: 'var(--success)',
             items: [
                 { id: 'intéressé', label: 'Intéressé', icon: <Target size={16} /> },
-                { id: 'rendez_vous_pris', label: 'Rendez-vous', icon: <CheckCircle2 size={16} /> },
-                { id: 'infos_envoyees', label: 'Infos envoyées', icon: <Mail size={16} /> },
-                { id: 'whatsapp_envoye', label: 'WhatsApp envoyé', icon: <Mail size={16} /> },
-                { id: 'visite_campus', label: 'Visite campus', icon: <Users size={16} /> },
-                { id: 'dossier_demande', label: 'Dossier demandé', icon: <TrendingUp size={16} /> },
-                { id: 'dossier_recu', label: 'Dossier reçu', icon: <CheckCircle2 size={16} /> },
-                { id: 'frais_payes', label: 'Frais payés', icon: <CheckCircle2 size={16} /> },
+                { id: 'rappel', label: 'Rappel ou en cours', icon: <Clock size={16} /> },
+                { id: 'rendez_vous_pris', label: 'Rendez-vous planifié.', icon: <CheckCircle2 size={16} /> },
+                { id: 'reflexion', label: 'Réflexion et nous faire un retour', icon: <AlertCircle size={16} /> },
+                { id: 'reorientation', label: 'Réorientation', icon: <Users size={16} /> },
+                { id: 'dossier_recu', label: 'Dossiers reçus', icon: <TrendingUp size={16} /> },
+                { id: 'admis', label: 'Admis', icon: <Award size={16} /> },
+                { id: 'inscription_attente', label: 'Inscription en attente', icon: <Clock size={16} /> },
+                { id: 'inscrit', label: 'Inscrit', icon: <Sparkles size={16} /> },
             ]
         },
         {
-            title: 'NÉGATIF',
+            title: 'RÉSULTATS NÉGATIFS',
             color: 'var(--danger)',
             items: [
-                { id: 'refus_definitif', label: 'Refus définitif', icon: <XCircle size={16} /> },
-                { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', icon: <Users size={16} /> },
-                { id: 'hors_cible', label: 'Hors cible', icon: <AlertCircle size={16} /> },
+                { id: 'pas_interesse', label: 'Pas intéressé', icon: <XCircle size={16} /> },
+                { id: 'refus_categorique', label: 'Refus catégorique', icon: <XCircle size={16} /> },
+                { id: 'inscrit_ailleurs', label: 'Déjà inscrit ailleurs', icon: <Users size={16} /> },
+                { id: 'pas_moyens', label: 'Pas les moyens', icon: <TrendingUp size={16} /> },
+                { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', icon: <Clock size={16} /> },
+                { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', icon: <Clock size={16} /> },
+                { id: 'hors_cible', label: 'Hors-cible', icon: <AlertCircle size={16} /> },
+                { id: 'refus_repondre', label: 'Refus de répondre', icon: <XCircle size={16} /> },
             ]
         },
         {
-            title: 'TECHNIQUE',
+            title: 'ÉCHECS TECHNIQUES',
             color: 'var(--text-muted)',
             items: [
-                { id: 'injoignable', label: 'Injoignable', icon: <Clock size={16} /> },
+                { id: 'injoignable', label: 'Injoignable / ne répond pas', icon: <PhoneOff size={16} /> },
                 { id: 'repondeur', label: 'Répondeur', icon: <Mail size={16} /> },
-                { id: 'faux_numero', label: 'Faux numéro', icon: <Trash2 size={16} /> },
+                { id: 'faux_numero', label: 'Numéro incorrect / faux numéro', icon: <Trash2 size={16} /> },
             ]
         }
     ];

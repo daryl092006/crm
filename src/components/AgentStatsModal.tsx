@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown } from 'lucide-react';
+import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp } from 'lucide-react';
 import type { Agent } from '../types';
 import CommunicationCenter from './CommunicationCenter';
 import { supabase } from '../supabaseClient';
@@ -8,6 +8,7 @@ import { usePopup } from './Popup';
 import * as XLSX from 'xlsx';
 import { useToast } from './Toast';
 import OutcomeModal from './OutcomeModal';
+import LeadHistoryModal from './LeadHistoryModal';
 
 
 interface AgentStatsModalProps {
@@ -16,6 +17,7 @@ interface AgentStatsModalProps {
     setLeads: React.Dispatch<React.SetStateAction<any[]>>;
     statuses: any[];
     agents: Agent[];
+    campaigns: any[];
     onClose: () => void;
 }
 
@@ -41,17 +43,24 @@ const COUNTRIES_DB = [
     { id: '213', name: 'Algérie', keywords: ['ALGERIE', 'ALGERIA'] }
 ];
 
-const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, onClose }) => {
+const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose }) => {
     const { addToast } = useToast();
-    const { showPrompt, showConfirm } = usePopup();
+    const { showConfirm } = usePopup();
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
+    const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<any | null>(null);
     const [isHarmonizing, setIsHarmonizing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterCountry, setFilterCountry] = useState('all');
+    const [selectedCampaignTab, setSelectedCampaignTab] = useState('all');
+    const [showAllStatus, setShowAllStatus] = useState(false);
     const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
     const [isReassigning, setIsReassigning] = useState(false);
     const [showReassignDropdown, setShowReassignDropdown] = useState(false);
+
+    // Get unique campaigns present in this agent's leads
+    const agentCampaignIds = Array.from(new Set(leads.map(l => l.campaignId)));
+    const agentCampaigns = campaigns.filter(c => agentCampaignIds.includes(c.id));
 
     // MOTEUR DE DÉTECTION SÉCURISÉ (ULTRA-PUISSANT)
     const findCountryInfo = (countryStr: string, phoneStr: string) => {
@@ -129,13 +138,13 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     
     const pasReponduCount = leads.filter(l => {
         const sid = (l.statusId || '').toLowerCase();
-        return sid.includes('injoignable') || sid.includes('repondeur') || sid.includes('non_repondu');
+        return sid === 'injoignable' || sid === 'repondeur';
     }).length;
 
     const reachedLeadsCount = contactedLeadsCount - pasReponduCount;
     
     const inscribedLeadsCount = leads.filter(l => 
-        ['admis', 'inscrit', 'finalise'].some(k => (l.statusId || '').toLowerCase().includes(k))
+        ['admis', 'inscription_attente', 'inscrit'].some(k => (l.statusId || '').toLowerCase().includes(k))
     ).length;
     
     const conversionRate = reachedLeadsCount > 0 ? Math.round((inscribedLeadsCount / reachedLeadsCount) * 100) : 0;
@@ -158,17 +167,6 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         const newStatus = statuses.find(s => s.id === newStatusId);
         setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
         await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
-    };
-
-    const handleEditNote = async (leadId: string, currentNote: string) => {
-        const newPart = await showPrompt("Note", "Saisissez votre message...", "");
-        if (newPart?.trim()) {
-            const timestamp = `${new Date().getDate()}/${new Date().getMonth()+1}`;
-            const appendedNote = currentNote ? `[${timestamp}] ${newPart}\n──────────────\n${currentNote}` : `[${timestamp}] ${newPart}`;
-            await supabase.from('leads').update({ notes: appendedNote }).eq( 'id', leadId);
-            setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, notes: appendedNote } : l));
-            addToast("Note ajoutée", "success");
-        }
     };
 
     const handleExport = (selectedColumns: string[]) => {
@@ -224,9 +222,13 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const getPhaseLabel = (lead: any) => {
         const sid = (lead.statusId || '').toLowerCase();
-        if (['admis', 'inscrit', 'abandon', 'report', 'decision', 'finalise'].some(k => sid.includes(k))) return 'Décision';
-        if (['dossier', 'candidat'].some(k => sid.includes(k))) return 'Candidature';
-        if (['info', 'whatsapp', 'brochure', 'rdv', 'visite', 'reunion'].some(k => sid.includes(k))) return 'Information';
+        // ROADMAP: Décision (Clôture)
+        if (['admis', 'inscription_attente', 'inscrit'].includes(sid)) return 'Décision';
+        // ROADMAP: Candidature (Engagement fort)
+        if (['rdv_planifie', 'dossier_recu'].includes(sid)) return 'Candidature';
+        // ROADMAP: Information (Intérêt manifesté)
+        if (['interesse', 'rappel', 'reflexion', 'reorientation'].includes(sid)) return 'Information';
+        // ROADMAP: Qualification (Entrée/Echec)
         return 'Qualification';
     };
 
@@ -421,6 +423,106 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         </div>
                     </div>
 
+                    {/* ONGLETS DE CAMPAGNRE (Multi-campagnes detectées) */}
+                    {(agentCampaigns.length > 1 || selectedCampaignTab !== 'all') && (
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: 'fit-content' }}>
+                            <button 
+                                onClick={() => setSelectedCampaignTab('all')}
+                                style={{ 
+                                    padding: '10px 20px', 
+                                    borderRadius: '12px', 
+                                    border: 'none', 
+                                    background: selectedCampaignTab === 'all' ? 'var(--primary)' : 'transparent',
+                                    color: selectedCampaignTab === 'all' ? 'white' : 'var(--text-muted)',
+                                    fontWeight: 700,
+                                    fontSize: '0.875rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Toutes les Campagnes ({leads.length})
+                            </button>
+                            {agentCampaigns.map(c => {
+                                const count = leads.filter(l => l.campaignId === c.id).length;
+                                return (
+                                    <button 
+                                        key={c.id}
+                                        onClick={() => setSelectedCampaignTab(c.id)}
+                                        style={{ 
+                                            padding: '10px 20px', 
+                                            borderRadius: '12px', 
+                                            border: 'none', 
+                                            background: selectedCampaignTab === c.id ? 'var(--primary)' : 'transparent',
+                                            color: selectedCampaignTab === c.id ? 'white' : 'var(--text-muted)',
+                                            fontWeight: 700,
+                                            fontSize: '0.875rem',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {c.name} ({count})
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* POINT GLOBAL DES STATUTS (VERSION AGENT) */}
+                    <div className="card" style={{ marginBottom: '3rem', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ padding: '10px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '12px' }}>
+                                    <TrendingUp size={24} color="var(--primary)" />
+                                </div>
+                                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Performance Statuts {selectedCampaignTab !== 'all' ? `(${agentCampaigns.find(c => c.id === selectedCampaignTab)?.name})` : ''}</h3>
+                            </div>
+                            <button 
+                                onClick={() => setShowAllStatus(!showAllStatus)}
+                                className="btn" 
+                                style={{ background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '12px', fontSize: '0.875rem' }}
+                            >
+                                {showAllStatus ? 'Réduire' : 'Voir les 21 statuts'}
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
+                            {[
+                                { id: 'inscrit', label: 'Inscrit', color: 'var(--success)' },
+                                { id: 'admis', label: 'Admis', color: 'var(--accent)' },
+                                { id: 'interesse', label: 'Intéressé', color: 'var(--primary)' },
+                                { id: 'rappel', label: 'Rappel', color: 'var(--warning)' }
+                            ].map(st => {
+                                const count = leads.filter(l => 
+                                    (l.statusId || '').toLowerCase().includes(st.id) && 
+                                    (selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab)
+                                ).length;
+                                return (
+                                    <div key={st.id} style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                                        <div style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>{st.label}</div>
+                                        <div style={{ fontSize: '2rem', fontWeight: 950, color: 'white' }}>{count}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {showAllStatus && (
+                            <div style={{ marginTop: '2.5rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', animation: 'slideDown 0.3s ease-out' }}>
+                                {statuses.map(s => {
+                                    const count = leads.filter(l => 
+                                        l.statusId === s.id && 
+                                        (selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab)
+                                    ).length;
+                                    return (
+                                        <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '10px' }}>{s.label}</span>
+                                            <span style={{ fontWeight: 900, color: 'white', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>{count}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
                     {/* DÉTAIL DYNAMIQUE */}
                     <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
@@ -452,7 +554,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
                                         >
                                             <option value="all">Tous les Statuts</option>
-                                            {statuses.filter(s => ['nouveau', 'interesse', 'rdv_planifie', 'dossier_recu', 'admis', 'inscrit', 'pas_interesse', 'hors_cible', 'injoignable'].includes(s.id)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                            {statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                         </select>
                                     </div>
                                     <div style={{ position: 'relative' }}>
@@ -548,7 +650,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                 (l.phone || '').includes(searchQuery);
                                             const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                             const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                            return matchesSearch && matchesStatus && matchesCountry;
+                                            const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
+                                            return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
                                         })
                                         .sort((a,b) => (b.score || 0) - (a.score || 0)))
                                         .map((lead: any) => {
@@ -593,17 +696,40 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                 </td>
                                                 <td style={{ padding: '1.75rem' }}>
                                                     <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
-                                                        {statuses.filter(s => ['nouveau', 'interesse', 'rdv_planifie', 'dossier_recu', 'admis', 'inscrit', 'pas_interesse', 'hors_cible', 'injoignable'].includes(s.id)).map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                        {statuses.map((s: any) => <option key={s.id} value={s.id}>{s.label}</option>)}
                                                     </select>
                                                 </td>
                                                 <td style={{ padding: '1.75rem', textAlign: 'center' }}>
                                                     <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
                                                 </td>
                                                 <td style={{ padding: '1.75rem' }}>
-                                                    <div onClick={() => handleEditNote(lead.id, lead.notes || '')} style={{ fontSize: '0.875rem', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '15px', border: '1px solid rgba(255,255,255,0.1)', height: '60px', overflowY: 'auto' }}>
-                                                        {lead.notes ? lead.notes.substring(0, 40) + "..." : "+ Note"}
-                                                    </div>
-                                                </td>
+                                                     <div 
+                                                        onClick={() => setSelectedLeadForHistory(lead)} 
+                                                        style={{ 
+                                                            fontSize: '0.875rem', 
+                                                            cursor: 'pointer', 
+                                                            background: 'rgba(255,255,255,0.03)', 
+                                                            padding: '12px', 
+                                                            borderRadius: '15px', 
+                                                            border: '1px solid rgba(255,255,255,0.1)', 
+                                                            height: '60px', 
+                                                            overflowY: 'hidden',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            gap: '4px',
+                                                            transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}
+                                                        onMouseOut={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+                                                     >
+                                                         <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                             <MessageSquare size={10} /> VOIR HISTORIQUE
+                                                         </div>
+                                                         <div style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3 }}>
+                                                            {lead.notes ? lead.notes.substring(0, 40) + (lead.notes.length > 40 ? "..." : "") : "Aucune note..."}
+                                                         </div>
+                                                     </div>
+                                                 </td>
                                             </tr>
                                         );
                                     })}
@@ -703,6 +829,52 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 </div>
 
                 <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} />
+                <LeadHistoryModal 
+                    isOpen={!!selectedLeadForHistory} 
+                    lead={selectedLeadForHistory} 
+                    onClose={() => setSelectedLeadForHistory(null)} 
+                    onAddNote={async (content) => {
+                        if (!selectedLeadForHistory) return;
+                        const { data: interactionData, error } = await supabase
+                            .from('lead_interactions')
+                            .insert({
+                                lead_id: selectedLeadForHistory.id,
+                                agent_id: agent.id,
+                                type: 'note',
+                                content: content
+                            })
+                            .select()
+                            .single();
+
+                        if (error) {
+                            addToast("Erreur lors de l'ajout de la note", "error");
+                            throw error;
+                        }
+
+                        if (interactionData) {
+                            const newInteraction = {
+                                id: interactionData.id,
+                                type: 'note',
+                                content: interactionData.content,
+                                createdAt: interactionData.created_at
+                            };
+                            
+                            setLeads((prev: any[]) => prev.map(l => 
+                                l.id === selectedLeadForHistory.id 
+                                ? { ...l, interactions: [newInteraction, ...(l.interactions || [])] } 
+                                : l
+                            ));
+                            
+                            // Update the local reference for the modal as well
+                            setSelectedLeadForHistory((prev: any) => ({
+                                ...prev,
+                                interactions: [newInteraction, ...(prev.interactions || [])]
+                            }));
+                            
+                            addToast("Note enregistrée avec succès", "success");
+                        }
+                    }}
+                />
             </div>
         </div>
     );

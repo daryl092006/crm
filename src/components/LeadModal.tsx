@@ -14,7 +14,7 @@ interface LeadModalProps {
     profile: any;
     initialStatusId?: string;
 }
-const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'non_contacte' }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau' }) => {
     const { addToast } = useToast();
     const [newLead, setNewLead] = useState<Partial<StudentLead>>({
         firstName: '',
@@ -51,7 +51,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
             city: newLead.city,
             field_of_interest: newLead.fieldOfInterest,
             study_level: newLead.level,
-            status_id: newLead.statusId || initialStatusId,
+            status_id: newLead.statusId || 'nouveau',
             campaign_id: newLead.campaignId,
             agent_id: selectedA.id,
             organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'

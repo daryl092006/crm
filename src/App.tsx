@@ -142,37 +142,74 @@ function App() {
         })));
       }
 
-      // 5. Harmonize Statuses (Ensure critical ones exist in DB)
+      // 5. Harmonize Statuses (STRICT ENFORCEMENT)
       const requiredStatuses = [
-        { id: 'nouveau', label: 'Nouveau', color: '#6366f1' },
-        { id: 'interesse', label: 'Intéressé', color: '#8b5cf6' },
-        { id: 'rappel_demande', label: 'Rappel demandé', color: '#f59e0b' },
-        { id: 'infos_envoyees', label: 'Infos envoyées', color: '#10b981' },
-        { id: 'whatsapp_envoye', label: 'WhatsApp envoyé', color: '#25D366' },
-        { id: 'visite_campus', label: 'Visite campus', color: '#ec4899' },
-        { id: 'rdv_planifie', label: 'Rendez-vous planifié', color: '#6366f1' },
-        { id: 'dossier_demande', label: 'Dossier demandé', color: '#3b82f6' },
-        { id: 'dossier_recu', label: 'Dossier reçu', color: '#06b6d4' },
-        { id: 'frais_payes', label: 'Frais de dossier payés', color: '#22c55e' },
-        { id: 'admis', label: 'Admis', color: '#a855f7' },
-        { id: 'inscrit', label: 'Inscrit (Finalisé)', color: '#22c55e' },
-        { id: 'pas_interesse', label: 'Pas intéressé', color: '#94a3b8' },
-        { id: 'refus_definitif', label: 'Refus définitif', color: '#ef4444' },
-        { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', color: '#94a3b8' },
-        { id: 'hors_cible', label: 'Hors cible', color: '#475569' },
-        { id: 'injoignable', label: 'Non répondu', color: '#64748b' },
-        { id: 'faux_numero', label: 'Faux numéro', color: '#000000' }
+        { id: 'nouveau', label: 'Nouveau/ Nouveau fichier', color: '#6366f1', sort_order: 1 },
+        { id: 'interesse', label: 'Intéressé', color: '#8b5cf6', sort_order: 2 },
+        { id: 'rappel', label: 'Rappel ou en cours', color: '#f59e0b', sort_order: 3 },
+        { id: 'rdv_planifie', label: 'Rendez-vous planifié.', color: '#6366f1', sort_order: 4 },
+        { id: 'reflexion', label: 'Réflexion et nous faire un retour', color: '#3b82f6', sort_order: 5 },
+        { id: 'dossier_recu', label: 'Dossiers reçus', color: '#06b6d4', sort_order: 6 },
+        { id: 'admis', label: 'Admis', color: '#a855f7', sort_order: 7 },
+        { id: 'inscription_attente', label: 'Inscription en attente', color: '#ec4899', sort_order: 8 },
+        { id: 'inscrit', label: 'Inscrit', color: '#22c55e', sort_order: 9 },
+        { id: 'reorientation', label: 'Réorientation', color: '#10b981', sort_order: 10 },
+        { id: 'pas_interesse', label: 'Pas intéressé', color: '#94a3b8', sort_order: 11 },
+        { id: 'refus_categorique', label: 'Refus catégorique', color: '#ef4444', sort_order: 12 },
+        { id: 'inscrit_ailleurs', label: 'Déjà inscrit ailleurs', color: '#44403c', sort_order: 13 },
+        { id: 'pas_moyens', label: 'Pas les moyens', color: '#44403c', sort_order: 14 },
+        { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', color: '#44403c', sort_order: 15 },
+        { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', color: '#44403c', sort_order: 16 },
+        { id: 'hors_cible', label: 'Hors-cible', color: '#44403c', sort_order: 17 },
+        { id: 'refus_repondre', label: 'Refus de répondre', color: '#44403c', sort_order: 18 },
+        { id: 'injoignable', label: 'Injoignable / ne répond pas', color: '#64748b', sort_order: 19 },
+        { id: 'repondeur', label: 'Répondeur', color: '#64748b', sort_order: 20 },
+        { id: 'faux_numero', label: 'Numéro incorrect / faux numéro', color: '#1c1917', sort_order: 21 }
       ];
+
+      const allowedIds = requiredStatuses.map(rs => rs.id);
+      
+      // Delete any status in DB that is NOT in our required list
+      const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
+      if (toDelete.length > 0) {
+        console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
+        await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
+        
+        // ROADMAP REPAIR: Move all leads with "illegal" statuses back to 'nouveau'
+        // This fixes why the user was still seeing old labels
+        await supabase.from('leads')
+          .update({ status_id: 'nouveau' })
+          .not('status_id', 'in', `(${allowedIds.join(',')})`);
+          
+        console.log("Database synchronized: legacy statuses migrated to 'nouveau'");
+      }
 
       const existingIds = (statusesData || []).map(s => s.id);
       const toCreate = requiredStatuses.filter(rs => !existingIds.includes(rs.id));
 
       if (toCreate.length > 0) {
-        console.log("Syncing statuses to DB:", toCreate.map(s => s.id));
         await supabase.from('lead_statuses').insert(toCreate.map(s => ({
-          ...s,
+          id: s.id,
+          label: s.label,
+          color: s.color,
+          sort_order: s.sort_order,
           organization_id: '00000000-0000-0000-0000-000000000000'
         })));
+      }
+
+      // Always re-fetch to ensure perfect sync
+      const { data: finalStatuses } = await supabase.from('lead_statuses').select('*').order('sort_order');
+      if (finalStatuses) {
+        setStatuses(finalStatuses
+          .filter(s => allowedIds.includes(s.id))
+          .map(s => ({
+            id: s.id,
+            label: s.label,
+            color: s.color,
+            isDefault: s.is_default,
+            sortOrder: s.sort_order
+          }))
+        );
       }
 
       if (campaignsData) setCampaigns(campaignsData.map((c: any) => ({
@@ -199,13 +236,13 @@ function App() {
 
         const pasReponduCount = agentLeads.filter(l => {
           const sid = (l.status_id || '').toLowerCase();
-          return sid.includes('injoignable') || sid.includes('repondeur') || sid.includes('non_repondu');
+          return sid === 'injoignable' || sid === 'repondeur';
         }).length;
 
         const reachedCount = contactedCount - pasReponduCount;
         
         const inscribedCount = agentLeads.filter((l: any) => 
-          ['admis', 'inscrit', 'finalise'].some(k => (l.status_id || '').toLowerCase().includes(k))
+          ['admis', 'inscription_attente', 'inscrit'].some(k => (l.status_id || '').toLowerCase().includes(k))
         ).length;
 
         const rate = reachedCount > 0 ? Math.round((inscribedCount / reachedCount) * 100) : 0;
@@ -276,7 +313,7 @@ function App() {
         <OnboardingTour />
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
         <main className="main-content">
-          {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} />}
+          {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} statuses={statuses} />}
           {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
           {activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
 

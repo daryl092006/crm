@@ -8,6 +8,7 @@ import { usePopup } from './Popup';
 import { useState } from 'react';
 import AddCampaignModal from './AddCampaignModal';
 import LeadExportModal from './LeadExportModal';
+import { smartParsePhone } from '../utils/verificationService';
 
 
 
@@ -52,7 +53,15 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
         const errors: string[] = [];
         const importedLeads: any[] = [];
         const normalize = (s: any) => s ? s.toString().toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : "";
-        const headers = (rows[0] || []).map(h => normalize(h));
+        
+        // --- AMÉLIORATION : Détection intelligente de la ligne d'en-tête ---
+        let headerRowIdx = 0;
+        // On cherche la première ligne qui a au moins 2 colonnes remplies (pour éviter les lignes de titre vides)
+        while (headerRowIdx < rows.length && (!rows[headerRowIdx] || rows[headerRowIdx].filter(c => c !== null && c !== undefined && String(c).trim() !== "").length < 2)) {
+            headerRowIdx++;
+        }
+
+        const headers = (rows[headerRowIdx] || []).map(h => normalize(h));
 
         // Use custom mappings if available, otherwise fallback to default
         const mappings = campaign.column_mappings || [
@@ -61,21 +70,6 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             { field: 'email', label: 'Email' },
             { field: 'phone', label: 'Téléphone' }
         ];
-
-
-        const required = mappings.map(m => normalize(m.label));
-        const missing = required.filter((r, idx) => {
-            // Only strictly require prenom, nom, email if they are in mappings
-            const field = mappings[idx].field;
-            if (['firstName', 'lastName', 'email'].includes(field)) {
-                return !headers.includes(r);
-            }
-            return false;
-        });
-
-        if (missing.length > 0) {
-            return { valid: false, errors: [`Colonnes obligatoires manquantes : ${missing.join(', ')}`], leads: [] };
-        }
 
         const fieldToIdx: Record<string, number> = {};
         mappings.forEach(m => {
@@ -92,12 +86,11 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             fieldToIdx[m.field] = idx;
         });
 
-        let currentLeadsForAssignment = [...leads];
+        const currentLeadsForAssignment = [...leads];
 
-        rows.slice(1).forEach((rawCols, index) => {
+        rows.slice(headerRowIdx + 1).forEach((rawCols, index) => {
             if (!rawCols || rawCols.length === 0) return;
 
-            // Map the row values based on header indices to handle sparse or short rows
             const getVal = (field: string) => {
                 const idx = fieldToIdx[field];
                 if (idx === undefined || idx === -1 || idx >= rawCols.length) return "";
@@ -105,16 +98,34 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 return val === null || val === undefined ? "" : String(val).trim();
             };
 
-            const email = getVal('email');
-            const phone = getVal('phone');
-            const lineNum = index + 2;
+            let email = getVal('email');
+            const normEmail = normalize(email);
 
+            // --- AMÉLIORATION : Skip les lignes qui sont des répétitions d'en-têtes ---
+            if (normEmail === 'email' || normEmail === 'adresse e-mail' || normEmail === 'mail') return;
+
+            // On vérifie si la ligne est vraiment vide avant de crier à l'erreur
+            const hasAnySignificantData = rawCols.some(c => c !== null && c !== undefined && String(c).trim().length > 1);
+            if (!hasAnySignificantData) return;
+
+            let phoneRaw = getVal('phone') || "";
+            const smartPhone = smartParsePhone(phoneRaw);
+            let phone = smartPhone.primary || "00000000";
+            let additionalPhoneNote = smartPhone.note;
+            if (smartPhone.others.length > 0) {
+                additionalPhoneNote += ` | Autres numéros : ${smartPhone.others.join(', ')}`;
+            }
+
+            // --- AMÉLIORATION : Email optionnel (Placeholder si vide) ---
             if (!email || !email.includes('@')) {
-                const hasAnyData = rawCols.some(c => c !== null && c !== undefined && String(c).trim() !== "");
-                if (hasAnyData) {
-                    errors.push(`Ligne ${lineNum}: Email invalide (${email || 'vide'})`);
+                // Si la ligne a quand même des données (ex: un nom ou un tel), on ne bloque pas
+                const hasName = getVal('firstName') || getVal('lastName');
+                if (hasName || (phone !== "00000000" && phone !== "")) {
+                    email = `prospect-${Math.random().toString(36).substring(7)}@elite-placeholder.com`;
+                } else {
+                    // Si vraiment rien de significatif, on ignore la ligne sans erreur
+                    return;
                 }
-                return;
             }
 
             const firstName = getVal('firstName');
@@ -124,9 +135,8 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             const field = getVal('fieldOfInterest');
             const level = getVal('level');
             const status = getVal('statusId');
-            const note = getVal('notes');
+            const note = getVal('notes') + additionalPhoneNote;
 
-            // Handle custom fields (metadata)
             const metadata: Record<string, any> = {};
             mappings.forEach(m => {
                 const standardFields = ['firstName', 'lastName', 'email', 'phone', 'country', 'city', 'fieldOfInterest', 'level', 'notes', 'statusId', 'score'];
@@ -146,7 +156,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 city: city || '',
                 field_of_interest: field || 'Autre',
                 study_level: level || '',
-                status_id: status.toLowerCase() || 'non_contacte',
+                status_id: status.toLowerCase() || 'nouveau',
                 notes: note || '',
                 metadata: metadata,
                 campaign_id: campaign.id,
@@ -155,9 +165,6 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             };
 
             importedLeads.push(newLead);
-            
-            // Critical for load balancing: update temporary state so next iteration 
-            // of the loop knows this agent already got a new lead.
             currentLeadsForAssignment.push({
                 id: `tmp-${index}`,
                 firstName: newLead.first_name,
@@ -174,7 +181,6 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 createdAt: new Date().toISOString()
             } as any);
         });
-
 
         return { valid: errors.length === 0, errors, leads: importedLeads };
     };
