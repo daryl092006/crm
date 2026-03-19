@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { StudentLead, Campaign, Agent, StudyField } from '../types';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
-import { sanitizeForPostgres, smartParsePhone, resolveCityToCountry, COUNTRIES_DB, resolveGeographicTruth } from '../utils/verificationService';
+import { sanitizeForPostgres } from '../utils/verificationService';
 import { getBestAgentForLead } from '../utils/assignmentService';
 
 interface LeadModalProps {

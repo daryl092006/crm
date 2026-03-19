@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe } from 'lucide-react';
+import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe, Pencil, Check } from 'lucide-react';
 import type { Agent } from '../types';
 import { supabase } from '../supabaseClient';
 import { smartParsePhone, sanitizeForPostgres, resolveCityToCountry, resolveGeographicTruth, COUNTRIES_DB } from '../utils/verificationService';
@@ -45,6 +45,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [filterOnlyProblems, setFilterOnlyProblems] = useState<'duplicate' | 'format' | 'country' | null>(null);
     const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
+    const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+    const [tempNoteValue, setTempNoteValue] = useState("");
+    const [isSavingNote, setIsSavingNote] = useState(false);
 
     // --- LOGIQUE DE DONNÉES ET FILTRAGE STRATÉGIQUE ---
     const filteredLeadsByCampaign = React.useMemo(() => {
@@ -218,6 +221,27 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
     };
 
+    const handleUpdateNote = async (leadId: string) => {
+        if (isSavingNote) return;
+        setIsSavingNote(true);
+        try {
+            const { error } = await supabase
+                .from('leads')
+                .update({ notes: tempNoteValue })
+                .eq('id', leadId);
+            
+            if (error) throw error;
+            
+            setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, notes: tempNoteValue } : l));
+            addToast("Note mise à jour !", "success");
+            setEditingNoteId(null);
+        } catch (error: any) {
+            addToast(error.message, "error");
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
+
     const handleExport = (selectedColumns: string[]) => {
         if (!agent) return;
 
@@ -231,7 +255,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
                 const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                 const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                return matchesSearch && matchesStatus && matchesCountry;
+                const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
+                return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
             });
         }
 
@@ -653,7 +678,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         </div>
                     )}
 
-                    {/* ONGLETS DE CAMPAGNRE (Multi-campagnes detectées) */}
+                    {/* ONGLETS DE CAMPAGNE (Multi-campagnes detectées) */}
                     {(agentCampaigns.length > 1 || selectedCampaignTab !== 'all') && (
                         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: 'fit-content' }}>
                             <button 
@@ -817,7 +842,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                         const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
                                         const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                         const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                        return matchesSearch && matchesStatus && matchesCountry;
+                                        const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
+                                        return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
                                     }).length} prospects trouvés
                                 </div>
                             </div>
@@ -865,7 +891,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                         const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
                                                         const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                                         const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                                        return matchesSearch && matchesStatus && matchesCountry;
+                                                        const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
+                                                        return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
                                                     });
                                                     handleSelectAll(filteredItems);
                                                 }}
@@ -892,7 +919,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                 (l.phone || '').includes(searchQuery);
                                             const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                             const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                            const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
+                                            const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
                                             
                                             // ISOLATION IA
                                             if (filterOnlyProblems) {
@@ -902,7 +929,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                                             return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
                                         }).sort((a,b) => (b.score || 0) - (a.score || 0));
-
+                                        
                                         const startIndex = (currentPage - 1) * itemsPerPage;
                                         return filtered.slice(startIndex, startIndex + itemsPerPage);
                                     })()
@@ -956,30 +983,83 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                 </td>
                                                 <td>
                                                      <div 
-                                                        onClick={() => setSelectedLeadForHistory(lead)} 
                                                         style={{ 
                                                             fontSize: '0.875rem', 
-                                                            cursor: 'pointer', 
                                                             background: 'rgba(255,255,255,0.03)', 
-                                                            padding: '12px', 
+                                                            padding: '8px 12px', 
                                                             borderRadius: '15px', 
                                                             border: '1px solid rgba(255,255,255,0.1)', 
-                                                            height: '60px', 
-                                                            overflowY: 'hidden',
+                                                            minHeight: '60px', 
                                                             display: 'flex',
                                                             flexDirection: 'column',
                                                             gap: '4px',
-                                                            transition: 'all 0.2s'
+                                                            transition: 'all 0.2s',
+                                                            position: 'relative'
                                                         }}
-                                                        onMouseOver={e => e.currentTarget.style.borderColor = 'var(--primary)'}
-                                                        onMouseOut={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
                                                      >
-                                                         <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                             <MessageSquare size={10} /> VOIR HISTORIQUE
+                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <div 
+                                                                onClick={() => setSelectedLeadForHistory(lead)}
+                                                                style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                                            >
+                                                                <MessageSquare size={10} /> VOIR HISTORIQUE
+                                                            </div>
+                                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                                {editingNoteId === lead.id ? (
+                                                                    <button 
+                                                                        onClick={() => handleUpdateNote(lead.id)}
+                                                                        disabled={isSavingNote}
+                                                                        style={{ background: 'transparent', border: 'none', color: 'var(--success)', cursor: 'pointer', padding: 0 }}
+                                                                    >
+                                                                        <Check size={14} />
+                                                                    </button>
+                                                                ) : (
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            setEditingNoteId(lead.id);
+                                                                            setTempNoteValue(lead.notes || "");
+                                                                        }}
+                                                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                                                                    >
+                                                                        <Pencil size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                          </div>
-                                                         <div style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3 }}>
-                                                            {lead.notes ? lead.notes.substring(0, 40) + (lead.notes.length > 40 ? "..." : "") : "Aucune note..."}
-                                                         </div>
+                                                         
+                                                         {editingNoteId === lead.id ? (
+                                                             <textarea 
+                                                                value={tempNoteValue}
+                                                                onChange={(e) => setTempNoteValue(e.target.value)}
+                                                                autoFocus
+                                                                style={{ 
+                                                                    background: 'rgba(0,0,0,0.3)', 
+                                                                    border: '1px solid var(--primary)', 
+                                                                    color: 'white', 
+                                                                    fontSize: '0.8rem', 
+                                                                    padding: '4px', 
+                                                                    borderRadius: '6px', 
+                                                                    width: '100%', 
+                                                                    minHeight: '40px',
+                                                                    resize: 'none',
+                                                                    outline: 'none'
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter' && e.ctrlKey) handleUpdateNote(lead.id);
+                                                                    if (e.key === 'Escape') setEditingNoteId(null);
+                                                                }}
+                                                             />
+                                                         ) : (
+                                                             <div 
+                                                                onClick={() => {
+                                                                    setEditingNoteId(lead.id);
+                                                                    setTempNoteValue(lead.notes || "");
+                                                                }}
+                                                                style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3, cursor: 'text' }}
+                                                             >
+                                                                {lead.notes ? (lead.notes.length > 60 ? lead.notes.substring(0, 57) + "..." : lead.notes) : "Aucune note..."}
+                                                             </div>
+                                                         )}
                                                      </div>
                                                  </td>
                                             </tr>

@@ -16,7 +16,7 @@ interface MessagingProps {
     sequences: Sequence[];
 }
 
-const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, agents, templates, sequences }) => {
+const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, templates, sequences }) => {
 
     const { addToast } = useToast();
     const { showPrompt } = usePopup();
