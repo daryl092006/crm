@@ -119,7 +119,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                     <div>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>{name}</h3>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                            Membre Élite CRM • Rejoins le {new Date(profile?.created_at).toLocaleDateString()}
+                            Membre ESCEN CRM • Rejoins le {new Date(profile?.created_at).toLocaleDateString()}
                         </p>
                     </div>
 
@@ -215,11 +215,11 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <h4 style={{ fontWeight: 600 }}>Guide d'utilisation</h4>
-                            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Besoin d'un rappel sur le fonctionnement d'Élite CRM ?</p>
+                            <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Besoin d'un rappel sur le fonctionnement d'ESCEN CRM ?</p>
                         </div>
                         <button
                             onClick={() => {
-                                localStorage.removeItem('elite_crm_tour_seen');
+                                localStorage.removeItem('escen_crm_tour_seen');
                                 window.location.reload();
                             }}
                             className="btn"

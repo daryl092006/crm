@@ -279,7 +279,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                             {hasSession ? "Complétez votre profil Admin" : "Créez votre compte Admin"}
                         </h2>
                         <p className="auth-subtitle">
-                            {hasSession ? "Vous êtes connecté. Configurez maintenant votre espace." : "Commencez l'aventure EliteCRM en quelques secondes."}
+                            {hasSession ? "Vous êtes connecté. Configurez maintenant votre espace." : "Commencez l'aventure ESCEN CRM en quelques secondes."}
                         </p>
                         {!hasSession && (
                             <div className="input-group">
@@ -357,7 +357,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                             ))}
                         </div>
                         <button className="btn btn-primary btn-auth" onClick={handleRegister} disabled={isLoading}>
-                            {isLoading ? <Loader2 className="spin" /> : 'Finaliser & Lancer EliteCRM'}
+                            {isLoading ? <Loader2 className="spin" /> : 'Finaliser & Lancer ESCEN CRM'}
                         </button>
                     </div>
                 );
@@ -393,7 +393,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                             </div>
                         </div>
                         <h2 className="auth-title">Félicitations !</h2>
-                        <p className="auth-subtitle">Votre espace EliteCRM est prêt. Vos conseillers recevront bientôt leur invitation.</p>
+                        <p className="auth-subtitle">Votre espace ESCEN CRM est prêt. Vos conseillers recevront bientôt leur invitation.</p>
                         <button className="btn btn-primary btn-auth" style={{ marginTop: '2rem' }} onClick={() => setMode('login')}>
                             Se connecter maintenant
                         </button>

@@ -17,7 +17,7 @@ const OnboardingTour: React.FC = () => {
     const steps: TourStep[] = [
         {
             targetId: '', // Neutral start
-            title: "Bienvenue sur Élite CRM",
+            title: "Bienvenue sur ESCEN CRM",
             content: "Laissez-moi vous montrer comment transformer vos prospects en étudiants inscrits en quelques clics.",
             icon: <Sparkles size={24} color="var(--primary)" />,
             position: 'bottom'
@@ -53,7 +53,7 @@ const OnboardingTour: React.FC = () => {
     ];
 
     useEffect(() => {
-        const hasSeenTour = localStorage.getItem('elite_crm_tour_seen');
+        const hasSeenTour = localStorage.getItem('escen_crm_tour_seen');
         if (!hasSeenTour) {
             setTimeout(() => setIsVisible(true), 1500);
         }
@@ -83,7 +83,7 @@ const OnboardingTour: React.FC = () => {
             // Auto-scroll to element if needed
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentStepIndex, isVisible]);
 
     const handleNext = () => {
@@ -102,7 +102,7 @@ const OnboardingTour: React.FC = () => {
 
     const completeTour = () => {
         setIsVisible(false);
-        localStorage.setItem('elite_crm_tour_seen', 'true');
+        localStorage.setItem('escen_crm_tour_seen', 'true');
     };
 
     if (!isVisible) return null;

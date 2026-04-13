@@ -80,7 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, profile }) =
 
             <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: '1rem 0', borderTop: '1px solid var(--border)' }}>
                 <div style={{ padding: '0 1rem', marginBottom: '1rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Elite CRM v2.0</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ESCEN CRM v2.0</div>
                 </div>
 
                 <button

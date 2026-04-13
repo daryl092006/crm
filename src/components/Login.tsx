@@ -88,7 +88,7 @@ export const Login: React.FC = () => {
                         <ShieldCheck size={32} color="white" />
                     </div>
                     <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>
-                        {isForgotPassword ? 'Mot de passe oublié' : (isRegister ? 'Créer mon CRM' : 'Accès Élite CRM')}
+                        {isForgotPassword ? 'Mot de passe oublié' : (isRegister ? 'Créer mon CRM' : 'Accès ESCEN CRM')}
                     </h2>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                         {isForgotPassword ? 'Entrez votre email pour réinitialiser.' : (isRegister ? 'Configurez votre espace entreprise en 2 minutes.' : 'Connectez-vous pour gérer vos candidats.')}

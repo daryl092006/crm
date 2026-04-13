@@ -372,7 +372,7 @@ function App() {
           <div className="loader-rings"></div>
           <div className="loader-rings"></div>
         </div>
-        <div className="loading-text">Elite CRM</div>
+        <div className="loading-text">ESCEN CRM</div>
       </div>
     );
   }
@@ -395,7 +395,7 @@ function App() {
             }}>
               <Target size={18} color="white" />
             </div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>EliteCRM</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>ESCEN CRM</h2>
           </div>
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}

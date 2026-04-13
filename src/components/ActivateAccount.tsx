@@ -126,7 +126,7 @@ const ActivateAccount: React.FC = () => {
         <div className="auth-container">
             <div className="auth-card glassmorphism animate-fade">
                 <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <div className="logo" style={{ marginBottom: '1rem' }}>Elite<span>CRM</span> ESCEN</div>
+                    <div className="logo" style={{ marginBottom: '1rem' }}>ESCEN<span>CRM</span></div>
                     <div style={{ display: 'inline-flex', padding: '12px', background: 'rgba(99,102,241,0.1)', borderRadius: '12px', marginBottom: '1rem' }}>
                         <UserCircle size={32} color="var(--primary)" />
                     </div>
