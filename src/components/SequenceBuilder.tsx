@@ -28,6 +28,7 @@ const SequenceBuilder: React.FC<SequenceBuilderProps> = ({ sequence, onClose }) 
                     if (data) {
                         setSteps(data.map(s => ({
                             id: s.id,
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             type: (s.messaging_templates?.category || 'whatsapp') as any,
                             delay: `${s.delay_days} jours`,
                             content: s.messaging_templates?.content || ''

@@ -12,10 +12,10 @@ interface LeadModalProps {
     campaigns: Campaign[];
     agents: Agent[];
     leads: StudentLead[];
-    profile: any;
+    profile: import('../types').Profile | null;
     initialStatusId?: string;
     showConfirm: (title: string, message: string) => Promise<boolean>;
-    statuses: any[];
+    statuses: import('../types').LeadStatus[];
 }
 const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau', showConfirm, statuses }) => {
     const { addToast } = useToast();
@@ -92,7 +92,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 .single();
 
             if (error) {
-                addToast("Erreur lors de la mise à jour : " + error.message, "error");
+                addToast("Erreur lors de la mise à jour : " + (error as Error).message, "error");
                 return;
             }
             
@@ -141,7 +141,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
             .single();
 
         if (error) {
-            addToast("Erreur lors de la création : " + error.message, "error");
+            addToast("Erreur lors de la création : " + (error as Error).message, "error");
         } else if (data) {
             if (newLead.notes) {
                 await supabase.from('lead_interactions').insert({
@@ -197,6 +197,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
 
                     <select
                         value={newLead.fieldOfInterest}
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
                         onChange={e => setNewLead({ ...newLead, fieldOfInterest: e.target.value as any })}
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                     >

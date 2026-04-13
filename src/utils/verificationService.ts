@@ -56,8 +56,8 @@ const eliteNormalize = (text: string): string => {
     return text
         .trim()
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "") 
-        .replace(/[’‘`´]/g, "'") 
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[’‘`´]/g, "'")
         .replace(/[^\w\s']/g, '')
         .toUpperCase();
 };
@@ -65,7 +65,7 @@ const eliteNormalize = (text: string): string => {
 export const resolveCityToCountry = (text: string): { country: string; isUnique: boolean } | null => {
     if (!text) return null;
     const clean = eliteNormalize(text);
-    
+
     // 1. City DB check FIRST (pour l'isUnique)
     const foundCity = CITIES_DB.find(c => {
         const cityNorm = eliteNormalize(c.name);
@@ -85,21 +85,21 @@ export const resolveCityToCountry = (text: string): { country: string; isUnique:
 
 export const smartParsePhone = (input: string): SmartPhoneResult => {
     if (!input) return { primary: '', others: [], status: 'Invalide', note: '', isExplicit: false };
-    
+
     let raw = input.trim();
     if (raw.startsWith('=')) raw = raw.substring(1).trim();
     const isExplicit = raw.startsWith('+') || raw.startsWith('00');
-    let cleanDigits = raw.replace(/[\s\-\(\)\.]/g, '');
+    let cleanDigits = raw.replace(/[\s().-]/g, '');
     if (cleanDigits.startsWith('00')) cleanDigits = '+' + cleanDigits.substring(2);
-    
-    let parts = cleanDigits.split(/[\/\,;\|]+/).map(p => p.trim()).filter(p => p.length >= 7);
+
+    const parts = cleanDigits.split(/[/,;|]+/).map(p => p.trim()).filter(p => p.length >= 7);
     const results: string[] = [];
-    
+
     parts.forEach(part => {
         let clean = part;
         const d = part.replace(/\D/g, '');
         if (!clean.startsWith('+')) {
-            const sortedCountries = [...COUNTRIES_DB].sort((a,b) => b.id.length - a.id.length);
+            const sortedCountries = [...COUNTRIES_DB].sort((a, b) => b.id.length - a.id.length);
             for (const c of sortedCountries) {
                 if (d.startsWith(c.id) && d.length >= (c.id.length + 7)) {
                     clean = '+' + d;
@@ -113,30 +113,30 @@ export const smartParsePhone = (input: string): SmartPhoneResult => {
     const primary = results[0] || '';
     let detectedCountry: string | undefined = undefined;
     const digits = primary.replace(/\D/g, '');
-    for (const c of [...COUNTRIES_DB].sort((a,b) => b.id.length - a.id.length)) {
+    for (const c of [...COUNTRIES_DB].sort((a, b) => b.id.length - a.id.length)) {
         if (digits.startsWith(c.id)) {
             detectedCountry = c.name;
             break;
         }
     }
-    
+
     let status: StudentLead['phoneVerification'] | 'Numéro non normalisé' = 'Inconnu';
     try {
         const testNum = primary.startsWith('+') ? primary : '+' + primary;
         const parsed = parsePhoneNumber(testNum);
         status = (parsed && isValidNumber(parsed.number)) ? 'Valide' : 'Invalide';
-    } catch (e) { status = 'Invalide'; }
+    } catch { status = 'Invalide'; }
 
     return { primary, others: results.slice(1), status, note: '', detectedCountry, isExplicit };
 };
 
 export const sanitizeForPostgres = <T,>(data: T): T => {
-    if (typeof data === 'string') return data.replace(/\0/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '').trim() as unknown as T;
+    if (typeof data === 'string') return data.replace(/\x00/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '').trim() as unknown as T;
     if (Array.isArray(data)) return data.map(v => sanitizeForPostgres(v)) as unknown as T;
     if (data !== null && typeof data === 'object') {
-        const obj = { ...data } as any;
+        const obj = { ...data } as Record<string, unknown>;
         for (const k in obj) obj[k] = sanitizeForPostgres(obj[k]);
-        return obj as T;
+        return obj as unknown as T;
     }
     return data;
 };
@@ -145,16 +145,16 @@ export const sanitizeForPostgres = <T,>(data: T): T => {
  * IA SYSTEME ELITE (TRIANGULATION 2/3 + POIDS + PRIORITE ABSOLUE)
  */
 export const resolveGeographicTruth = (
-    phoneDetectedCountry?: string, 
-    countryField?: string, 
+    phoneDetectedCountry?: string,
+    countryField?: string,
     cityField?: string,
     isPhoneExplicit: boolean = false
 ): { winner: string | null; status: 'coherence' | 'incoherence' | 'insuffisant' } => {
-    
+
     const phoneVote = phoneDetectedCountry || null;
     const countryInfo = resolveCityToCountry(countryField || '');
     const cityInfo = resolveCityToCountry(cityField || '');
-    
+
     // Experts avec Poids ÉLITE
     const experts = [
         { name: phoneVote, weight: isPhoneExplicit ? 10.0 : 1.2, src: 'phone', isUnique: false },
@@ -221,7 +221,7 @@ export const resolveGeographicTruth = (
     }
 
     if (winnerByWeight) {
-        const sortedScores = Object.values(countryScores).sort((a,b) => b-a);
+        const sortedScores = Object.values(countryScores).sort((a, b) => b - a);
         const secondScore = sortedScores[1] || 0;
         if (maxScore > secondScore + 0.5) {
             return { winner: winnerByWeight, status: 'coherence' };

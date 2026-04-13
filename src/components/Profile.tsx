@@ -14,12 +14,44 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
+    const isMockOrAdmin = profile?.id === '00000000-0000-0000-0000-000000000000' || profile?.role === 'admin';
     const { addToast } = useToast();
     const [name, setName] = useState(profile?.full_name || 'Utilisateur');
     const [email, setEmail] = useState(profile?.email || '');
     const [loading, setLoading] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [newPassword, setNewPassword] = useState('');
+
+    const handleResetPassword = async () => {
+        if (!newPassword || newPassword.length < 6) {
+            addToast("Le mot de passe doit faire au moins 6 caractères", "error");
+            return;
+        }
+        setLoading(true);
+        try {
+            const { error } = await supabase.auth.updateUser({ password: newPassword });
+            if (error) throw error;
+
+            // Update profile table to clear must_change_password
+            await supabase.from('profiles').update({ must_change_password: false }).eq('id', profile.id);
+
+            addToast("Mot de passe mis à jour ! Vous avez maintenant un accès complet.", "success");
+            setNewPassword('');
+            await onUpdate();
+        } catch (err: any) {
+            addToast(err.message, "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        if (profile) {
+            setName(profile.full_name || 'Utilisateur');
+            setEmail(profile.email || '');
+        }
+    }, [profile]);
 
     const handleSave = async () => {
         setLoading(true);
@@ -125,16 +157,48 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                                 style={{
                                     width: '100%',
                                     padding: '0.75rem 0.75rem 0.75rem 2.5rem',
-                                    background: 'rgba(255,255,255,0.02)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '10px',
-                                    color: 'white',
                                     outline: 'none'
                                 }}
                             />
                         </div>
                     </div>
                 </div>
+
+                {profile?.must_change_password && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', marginTop: '1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                            <Shield size={20} color="#ef4444" />
+                            <h4 style={{ fontWeight: 700, color: '#ef4444' }}>ACTION REQUISE : Nouveau Mot de Passe</h4>
+                        </div>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                            Pour sécuriser votre compte, veuillez définir un nouveau mot de passe ci-dessous.
+                        </p>
+                        <div style={{ position: 'relative' }}>
+                            <input
+                                type="password"
+                                placeholder="Nouveau mot de passe"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.75rem',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '8px',
+                                    color: 'white'
+                                }}
+                            />
+                        </div>
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleResetPassword}
+                            disabled={!newPassword || loading}
+                            style={{ background: '#ef4444', border: 'none' }}
+                        >
+                            {loading ? 'Mise à jour...' : 'Confirmer le nouveau mot de passe'}
+                        </button>
+                    </div>
+                )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', background: 'rgba(139, 92, 246, 0.05)', borderRadius: '12px', border: '1px solid rgba(139, 92, 246, 0.1)' }}>
                     <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
@@ -195,7 +259,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                     </thead>
                     <tbody>
                         {(() => {
-                            const myLeads = leads.filter(l => l.agentId === profile.id);
+                            const myLeads = isMockOrAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
                             const startIndex = (currentPage - 1) * itemsPerPage;
                             return myLeads.slice(startIndex, startIndex + itemsPerPage);
                         })().map(lead => (
@@ -222,17 +286,21 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                                 </td>
                             </tr>
                         ))}
-                        {leads.filter(l => l.agentId === profile.id).length === 0 && (
-                            <tr>
-                                <td colSpan={3} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                                    Vous n'avez aucun prospect assigné pour le moment.
-                                </td>
-                            </tr>
-                        )}
+                        {(() => {
+                            const myLeads = isMockOrAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
+                            if (myLeads.length === 0) return (
+                                <tr>
+                                    <td colSpan={3} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                        Vous n'avez aucun prospect assigné pour le moment.
+                                    </td>
+                                </tr>
+                            );
+                            return null;
+                        })()}
                     </tbody>
                 </table>
                 {(() => {
-                    const myLeads = leads.filter(l => l.agentId === profile.id);
+                    const myLeads = isMockOrAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
                     const totalPages = Math.ceil(myLeads.length / itemsPerPage);
                     if (totalPages <= 1) return null;
 
@@ -240,8 +308,8 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', borderTop: '1px solid var(--border)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                 <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
-                                <select 
-                                    value={itemsPerPage} 
+                                <select
+                                    value={itemsPerPage}
                                     onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
                                     style={{ padding: '4px 8px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', fontSize: '0.85rem' }}
                                 >
@@ -250,7 +318,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                             </div>
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <button 
+                                <button
                                     disabled={currentPage === 1}
                                     onClick={() => setCurrentPage(p => p - 1)}
                                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: 'pointer', padding: '6px', borderRadius: '8px' }}
@@ -258,7 +326,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                                     <ChevronLeft size={18} />
                                 </button>
                                 <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{currentPage} / {totalPages}</span>
-                                <button 
+                                <button
                                     disabled={currentPage === totalPages}
                                     onClick={() => setCurrentPage(p => p + 1)}
                                     style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: currentPage === totalPages ? 'rgba(255,255,255,0.1)' : 'white', cursor: 'pointer', padding: '6px', borderRadius: '8px' }}

@@ -1,0 +1,8 @@
+D:\crm\crm\src\components\ActivateAccount.tsx:25:8 React Hook useEffect has a missing dependency: 'checkInvitation'. Either include it or remove the dependency array. react-hooks/exhaustive-deps
+D:\crm\crm\src\components\AgentStatsModal.tsx:563:407 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+D:\crm\crm\src\components\AgentStatsModal.tsx:635:65 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+D:\crm\crm\src\components\AgentStatsModal.tsx:1002:127 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+D:\crm\crm\src\components\InvitationsManagerModal.tsx:45:8 React Hook useEffect has a missing dependency: 'fetchInvitations'. Either include it or remove the dependency array. react-hooks/exhaustive-deps
+D:\crm\crm\src\components\LeadDetailsModal.tsx:45:8 React Hook useEffect has a missing dependency: 'fetchHistory'. Either include it or remove the dependency array. react-hooks/exhaustive-deps
+D:\crm\crm\src\components\NotificationBell.tsx:60:8 React Hook useEffect has missing dependencies: 'addToast' and 'fetchNotifications'. Either include them or remove the dependency array. react-hooks/exhaustive-deps
+D:\crm\crm\src\components\OnboardingTour.tsx:86:8 React Hook useEffect has a missing dependency: 'steps'. Either include it or remove the dependency array. react-hooks/exhaustive-deps

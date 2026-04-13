@@ -9,12 +9,13 @@ import InvitationsManagerModal from './InvitationsManagerModal';
 import { supabase } from '../supabaseClient';
 
 interface AgentsProps {
-    profile: any;
+    profile: import('../types').Profile | null;
     agents: Agent[];
-    leads: any[];
+    leads: import('../types').StudentLead[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setLeads: React.Dispatch<React.SetStateAction<any[]>>;
     campaigns: Campaign[];
-    statuses: any[];
+    statuses: import('../types').LeadStatus[];
     onRefresh?: () => Promise<void>;
 }
 
@@ -25,6 +26,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isInviteManagerOpen, setIsInviteManagerOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
+
 
     const handleDeleteAgent = async (agentId: string, agentName: string) => {
         const confirmed = await showConfirm(
@@ -37,11 +39,28 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
 
         setIsDeleting(agentId);
         try {
-            // 1. Désassigner les leads (mettre agent_id à null)
-            await supabase
-                .from('leads')
-                .update({ agent_id: null })
-                .eq('agent_id', agentId);
+            // 1. Calcul de la réattribution
+            const activeOtherAgents = agents.filter(a => a.id !== agentId && a.isActive);
+            const agentLeads = leads.filter(l => l.agentId === agentId);
+
+            if (activeOtherAgents.length > 0 && agentLeads.length > 0) {
+                addToast(`Réattribution de ${agentLeads.length} prospects en cours...`, "info");
+
+                // Répartition Round-Robin
+                for (let i = 0; i < agentLeads.length; i++) {
+                    const targetAgent = activeOtherAgents[i % activeOtherAgents.length];
+                    await supabase
+                        .from('leads')
+                        .update({ agent_id: targetAgent.id })
+                        .eq('id', agentLeads[i].id);
+                }
+            } else if (activeOtherAgents.length === 0 && agentLeads.length > 0) {
+                // Si plus aucun agent, on désassigne (met à null)
+                await supabase
+                    .from('leads')
+                    .update({ agent_id: null })
+                    .eq('agent_id', agentId);
+            }
 
             // 2. Supprimer les interactions liées à cet agent
             await supabase
@@ -57,36 +76,53 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
 
             if (error) throw error;
 
-            addToast(`${agentName} et son historique ont été supprimés.`, "success");
+            addToast(`${agentName} supprimé. Ses prospects ont été réassignés aux agents actifs.`, "success");
             if (onRefresh) await onRefresh();
-        } catch (error: any) {
-            addToast(error.message || "Erreur lors de la suppression complète", "error");
+        } catch (error: unknown) {
+            addToast((error as Error).message || "Erreur lors de la suppression complète", "error");
         } finally {
             setIsDeleting(null);
         }
     };
 
 
-    const handleAddAgent = async (fullName: string) => {
+    const handleAddAgent = async (fullName: string, email: string) => {
         try {
             if (!profile?.organization_id) throw new Error("ID d'organisation introuvable");
 
-            const { error } = await supabase
-                .from('profiles')
-                .insert([{
-                    full_name: fullName,
-                    role: 'agent',
-                    organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000',
-                    is_active: true
-                }]);
+            addToast(`🚀 Création immédiate pour ${fullName}...`, "info");
 
-            if (error) throw error;
+            const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5emd4aGZ3dXhwdm5veHZzY2JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDgzMjgsImV4cCI6MjA4ODcyNDMyOH0.raMGoau9uxCzHzQlIqrDMIEbwXp8QHJ6ZvCjuCgAPyY';
 
-            addToast(`${fullName} a été ajouté à l'équipe !`, "success");
+            // --- APPEL "BYPASS" (Utilise la clé anon comme jeton maître) ---
+            const response = await fetch('https://ryzgxhfwuxpvnoxvscbk.supabase.co/functions/v1/create-agent', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${anonKey}`,
+                    'apikey': anonKey
+                },
+                body: JSON.stringify({
+                    fullName,
+                    email: email.trim(),
+                    organizationId: profile.organization_id
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || `Erreur serveur (${response.status})`);
+            }
+
+            const data = await response.json();
+            if (data?.error) throw new Error(data.error);
+
+            addToast(`${fullName} créé avec succès ! Ses accès ont été mailés.`, "success");
             if (onRefresh) await onRefresh();
             setIsAddModalOpen(false);
-        } catch (error: any) {
-            addToast(error.message || "Erreur lors de la création de l'agent", "error");
+        } catch (error: unknown) {
+            console.error("Create agent error:", error);
+            addToast((error as Error).message || "Erreur lors de la création de l'agent", "error");
             throw error;
         }
     };
@@ -220,11 +256,11 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                                         <button
                                             onClick={() => setSelectedAgent(agent)}
                                             className="btn"
-                                            style={{ 
-                                                padding: '6px', 
-                                                background: 'rgba(255,255,255,0.05)', 
+                                            style={{
+                                                padding: '6px',
+                                                background: 'rgba(255,255,255,0.05)',
                                                 border: '1px solid rgba(255,255,255,0.1)',
-                                                color: 'var(--text-muted)', 
+                                                color: 'var(--text-muted)',
                                                 cursor: 'pointer',
                                                 borderRadius: '8px'
                                             }}
@@ -236,11 +272,11 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                                             onClick={() => handleDeleteAgent(agent.id, agent.name)}
                                             disabled={isDeleting === agent.id}
                                             className="btn"
-                                            style={{ 
-                                                padding: '6px', 
-                                                background: 'rgba(239, 68, 68, 0.1)', 
+                                            style={{
+                                                padding: '6px',
+                                                background: 'rgba(239, 68, 68, 0.1)',
                                                 border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                color: 'var(--danger)', 
+                                                color: 'var(--danger)',
                                                 cursor: 'pointer',
                                                 borderRadius: '8px'
                                             }}

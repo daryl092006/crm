@@ -13,8 +13,10 @@ export type DispositionType =
 
 interface OutcomeModalProps {
     isOpen: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     lead: any;
     onClose: () => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onUpdate: (leadId: string, updates: any) => void;
 }
 
@@ -171,8 +173,8 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             onUpdate(lead.id, { statusId: newStatusId, score: newScore, metadata: newMetadata });
             addToast(`"${dispositionLabel}" enregistré`, "success");
             onClose();
-        } catch (error: any) {
-            addToast(error.message, "error");
+        } catch (error: unknown) {
+            addToast((error as Error).message, "error");
         }
     };
 

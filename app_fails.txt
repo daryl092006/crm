@@ -1,0 +1,7 @@
+36:42 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+79:6 React Hook useEffect has a missing dependency: 'loading'. Either include it or remove the dependency array. react-hooks/exhaustive-deps
+91:26 Expected a `const` instead of a literal type assertion. @typescript-eslint/prefer-as-const
+135:61 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+264:63 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+267:63 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any
+267:74 Unexpected any. Specify a different type. @typescript-eslint/no-explicit-any

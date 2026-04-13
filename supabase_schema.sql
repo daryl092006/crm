@@ -261,7 +261,7 @@ CREATE POLICY "appointments_full_access" ON appointments FOR ALL USING (true);
 
 -- Création de l'organisation par défaut
 INSERT INTO organizations (id, name, domain) 
-VALUES ('00000000-0000-0000-0000-000000000000', 'EliteCRM Bypass', 'bypass.crm')
+VALUES ('00000000-0000-0000-0000-000000000000', 'ESCEN CRM', 'escen.university')
 ON CONFLICT (id) DO NOTHING;
 
 -- Création d'une campagne par défaut

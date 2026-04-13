@@ -83,6 +83,7 @@ const OnboardingTour: React.FC = () => {
             // Auto-scroll to element if needed
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentStepIndex, isVisible]);
 
     const handleNext = () => {

@@ -8,7 +8,7 @@ import { supabase } from '../supabaseClient';
 
 
 interface MessagingProps {
-    profile: any;
+    profile: import('../types').Profile | null;
     leads: StudentLead[];
     setLeads: React.Dispatch<React.SetStateAction<StudentLead[]>>;
     agents: Agent[];
@@ -73,8 +73,8 @@ const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, templat
 
             setMessage('');
             addToast('Messages envoyés et enregistrés en base de données !', 'success');
-        } catch (error: any) {
-            addToast(error.message || "Erreur lors de l'envoi", "error");
+        } catch (error: unknown) {
+            addToast((error as Error).message || "Erreur lors de l'envoi", "error");
         }
     };
 
@@ -158,7 +158,7 @@ const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, templat
                                         organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
                                     });
 
-                                    if (error) addToast("Erreur lors de la création : " + error.message, "error");
+                                    if (error) addToast("Erreur lors de la création : " + (error as Error).message, "error");
                                     else addToast(`Template "${title}" enregistré avec succès.`, "success");
                                 }}
                                 className="btn" style={{ border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
@@ -228,7 +228,7 @@ const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, templat
                                     organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
                                 });
 
-                                if (error) addToast("Erreur lors de la création : " + error.message, "error");
+                                if (error) addToast("Erreur lors de la création : " + (error as Error).message, "error");
                                 else addToast(`Séquence "${name}" activée.`, "success");
                             }}
                             className="btn btn-primary">+ Créer une Séquence</button>

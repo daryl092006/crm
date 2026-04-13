@@ -33,12 +33,14 @@ export const PopupProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [isOpen, setIsOpen] = useState(false);
     const [options, setOptions] = useState<PopupOptions | null>(null);
     const [promptValue, setPromptValue] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [resolvePromise, setResolvePromise] = useState<((value: any) => void) | null>(null);
 
     const show = (opts: PopupOptions) => {
         setOptions(opts);
         setPromptValue(opts.defaultValue || '');
         setIsOpen(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return new Promise<any>((resolve) => {
             setResolvePromise(() => resolve);
         });

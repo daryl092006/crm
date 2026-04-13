@@ -57,6 +57,7 @@ export interface StudentLead {
 
     score: number;
     notes?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     metadata?: Record<string, any>;
     lastInteractionAt: string;
     createdAt: string;
@@ -77,6 +78,7 @@ export interface Campaign {
     startDate: string;
     endDate?: string;
     isActive: boolean;
+    agent_id?: string;
     column_mappings?: { field: string; label: string }[];
 }
 
@@ -88,11 +90,14 @@ export interface Agent {
     role: 'admin' | 'agent';
     capacityWeight: number;
     avatarUrl?: string;
+    isActive: boolean;
     // Metrics calculated from leads
     leadsAssigned: number;
     overdueTasksCount: number;
     conversionRate: number;
     avgResponseTime?: number; // In hours
+    mustChangePassword?: boolean;
+    capacity_weight?: number;
 }
 
 export interface Template {
@@ -114,3 +119,14 @@ export interface Sequence {
     activeLeadsCount?: number;
 }
 
+
+export interface Profile {
+    id: string;
+    organization_id: string;
+    organization_name?: string;
+    full_name: string;
+    role: 'admin' | 'agent';
+    email: string;
+    must_change_password?: boolean;
+    created_at?: string;
+}

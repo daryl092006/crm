@@ -33,8 +33,8 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
 
             if (error) throw error;
             setInvitations(data || []);
-        } catch (error: any) {
-            addToast(error.message, "error");
+        } catch (error: unknown) {
+            addToast((error as Error).message, "error");
         } finally {
             setLoading(false);
         }
@@ -42,6 +42,7 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
 
     useEffect(() => {
         if (isOpen) fetchInvitations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
     const deleteInvitation = async (id: string) => {
@@ -53,8 +54,8 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
             if (error) throw error;
             setInvitations(invitations.filter(i => i.id !== id));
             addToast("Invitation supprimée", "success");
-        } catch (error: any) {
-            addToast(error.message, "error");
+        } catch (error: unknown) {
+            addToast((error as Error).message, "error");
         }
     };
 

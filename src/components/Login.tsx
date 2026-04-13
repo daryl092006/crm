@@ -63,12 +63,15 @@ export const Login: React.FC = () => {
                 addToast('Espace entreprise créé avec succès ! Connectez-vous pour commencer.', 'success');
                 setIsRegister(false); // Bascule sur la connexion
             } else {
-                const { error } = await supabase.auth.signInWithPassword({ email, password });
+                const { error } = await supabase.auth.signInWithPassword({
+                    email: email.trim(),
+                    password
+                });
                 if (error) throw error;
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Auth Error Details:', error);
-            addToast(translateError(error.message || JSON.stringify(error)), 'error');
+            addToast(translateError((error as Error).message || JSON.stringify(error)), 'error');
         } finally {
             setLoading(false);
         }
@@ -96,22 +99,17 @@ export const Login: React.FC = () => {
                     key={isRegister ? 'reg' : 'log'}
                     onSubmit={handleAuth}
                     style={{ display: 'grid', gap: '1rem' }}
-                    autoComplete="off"
                 >
-                    {/* Champs leurres pour tromper les gestionnaires de mots de passe */}
-                    <input type="text" name="chrome-fill-fix-email" style={{ display: 'none' }} autoComplete="off" />
-                    <input type="password" name="chrome-fill-fix-password" style={{ display: 'none' }} autoComplete="new-password" />
                     {!isForgotPassword && isRegister && (
                         <div>
                             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>NOM DE L'ENTREPRISE</label>
                             <div style={{ position: 'relative' }}>
                                 <Building2 size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: 'var(--text-muted)' }} />
                                 <input
-                                    name="org_name_field"
-                                    id="org_name_field"
+                                    name="organization"
+                                    id="organization"
                                     type="text" required placeholder=""
                                     value={orgName} onChange={e => setOrgName(e.target.value)}
-                                    autoComplete="off"
                                     style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                                 />
                             </div>
@@ -121,11 +119,10 @@ export const Login: React.FC = () => {
                     <div>
                         <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>EMAIL PROFESSIONNEL</label>
                         <input
-                            name="email_field_unique"
-                            id="email_field_unique"
+                            name="email"
+                            id="email"
                             type="email" required placeholder=""
                             value={email} onChange={e => setEmail(e.target.value)}
-                            autoComplete="off"
                             style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                         />
                     </div>
@@ -134,11 +131,10 @@ export const Login: React.FC = () => {
                         <div>
                             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>MOT DE PASSE</label>
                             <input
-                                name="pass_field_unique"
-                                id="pass_field_unique"
+                                name="password"
+                                id="password"
                                 type="password" required placeholder=""
                                 value={password} onChange={e => setPassword(e.target.value)}
-                                autoComplete="new-password"
                                 style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                             />
                         </div>

@@ -10,24 +10,18 @@ const DEFAULT_ID = '00000000-0000-0000-0000-000000000000';
 async function setupBypassData() {
     console.log('--- Initialisation du mode Bypass ---');
     
-    // 1. Check/Create Organization
-    const { data: orgs, error: orgError } = await supabase
+    // 1. Force Update/Create Default Organization (ESCEN)
+    console.log('Mise à jour de l\'organisation par défaut : ESCEN...');
+    const { error: upsertError } = await supabase
         .from('organizations')
-        .select('*')
-        .eq('id', DEFAULT_ID)
-        .maybeSingle();
+        .upsert({ 
+            id: DEFAULT_ID, 
+            name: 'ESCEN CRM', 
+            domain: 'escen.university' 
+        });
 
-    if (!orgs) {
-        console.log('Création de l\'organisation par défaut...');
-        const { error: insertOrgError } = await supabase
-            .from('organizations')
-            .insert({ id: DEFAULT_ID, name: 'EliteCRM Démo', domain: 'demo.elitecrm.dev' });
-        
-        if (insertOrgError) console.error('Erreur création org:', insertOrgError);
-        else console.log('Organisation par défaut créée.');
-    } else {
-        console.log('Organisation par défaut déjà présente.');
-    }
+    if (upsertError) console.error('Erreur mise à jour org:', upsertError);
+    else console.log('Organisation ESCEN opérationnelle.');
 
     // 2. Add Statuses if empty
     const { data: statuses } = await supabase.from('lead_statuses').select('id');

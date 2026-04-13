@@ -1,15 +1,16 @@
 
 import React, { useState } from 'react';
-import { X, User } from 'lucide-react';
+import { X, User, Mail } from 'lucide-react';
 
 interface AddAgentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAdd: (fullName: string) => Promise<void>;
+    onAdd: (fullName: string, email: string) => Promise<void>;
 }
 
 const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd }) => {
     const [fullName, setFullName] = useState('');
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
 
     if (!isOpen) return null;
@@ -18,8 +19,9 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd })
         e.preventDefault();
         setLoading(true);
         try {
-            await onAdd(fullName);
+            await onAdd(fullName, email);
             setFullName('');
+            setEmail('');
             onClose();
         } catch (error) {
             console.error(error);
@@ -69,6 +71,30 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd })
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
                                 placeholder="ex: Jean Dupont"
+                                style={{
+                                    width: '100%',
+                                    padding: '0.75rem 1rem 0.75rem 2.75rem',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    color: 'white'
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                            Adresse Email
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                            <Mail size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="ex: agent@escen.university"
                                 style={{
                                     width: '100%',
                                     padding: '0.75rem 1rem 0.75rem 2.75rem',

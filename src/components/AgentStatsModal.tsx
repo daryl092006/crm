@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe, Pencil, Check } from 'lucide-react';
-import type { Agent } from '../types';
+import type { Agent, StudentLead, LeadStatus, Campaign } from '../types';
 import { supabase } from '../supabaseClient';
 import { smartParsePhone, sanitizeForPostgres, resolveCityToCountry, resolveGeographicTruth, COUNTRIES_DB } from '../utils/verificationService';
 import { usePopup } from './Popup';
@@ -13,11 +13,11 @@ import LeadHistoryModal from './LeadHistoryModal';
 
 interface AgentStatsModalProps {
     agent: Agent | null;
-    leads: any[];
-    setLeads: React.Dispatch<React.SetStateAction<any[]>>;
-    statuses: any[];
+    leads: StudentLead[];
+    setLeads: React.Dispatch<React.SetStateAction<StudentLead[]>>;
+    statuses: LeadStatus[];
     agents: Agent[];
-    campaigns: any[];
+    campaigns: Campaign[];
     onClose: () => void;
     onRefresh?: () => Promise<void>;
 }
@@ -28,8 +28,8 @@ interface AgentStatsModalProps {
 const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose, onRefresh }) => {
     const { addToast } = useToast();
     const { showConfirm } = usePopup();
-    const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
-    const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<any | null>(null);
+    const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<unknown | null>(null);
+    const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<unknown | null>(null);
     const [isHarmonizing, setIsHarmonizing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
@@ -51,8 +51,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     // --- LOGIQUE DE DONNÉES ET FILTRAGE STRATÉGIQUE ---
     const filteredLeadsByCampaign = React.useMemo(() => {
-        return selectedCampaignTab === 'all' 
-            ? leads 
+        return selectedCampaignTab === 'all'
+            ? leads
             : leads.filter(l => String(l.campaignId) === String(selectedCampaignTab));
     }, [leads, selectedCampaignTab]);
 
@@ -78,12 +78,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         const contact = total > 0 ? Math.round((contacted / total) * 100) : 0;
         const avgScore = total > 0 ? Math.round(filteredLeadsByCampaign.reduce((acc, curr) => acc + (curr.score || 0), 0) / total) : 0;
 
-        const fieldCounts = filteredLeadsByCampaign.reduce((acc: any, curr) => {
+        const fieldCounts = filteredLeadsByCampaign.reduce((acc: unknown, curr) => {
             const field = curr.fieldOfInterest || 'Non spécifié';
             acc[field] = (acc[field] || 0) + 1;
             return acc;
         }, {});
-        const topFields = Object.entries(fieldCounts).sort(([, a]: any, [, b]: any) => b - a).slice(0, 3);
+        const topFields = Object.entries(fieldCounts).sort(([, a]: unknown, [, b]: unknown) => b - a).slice(0, 3);
 
         return { total, nonContacted, contacted, pasRepondu, reached, inscribed, conversion, contact, avgScore, topFields };
     }, [filteredLeadsByCampaign]);
@@ -116,11 +116,11 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         return null;
     }, []);
 
-    const formatIntelligentPhone = React.useCallback((phone: string, countryInfo: any) => {
+    const formatIntelligentPhone = React.useCallback((phone: string, countryInfo: { id: string, name: string, keywords: string[] } | null) => {
         if (!phone || phone === 'N/A') return phone;
         let digits = phone.replace(/\D/g, '');
         if (digits.startsWith('00')) digits = digits.substring(2);
-        const allPrefixes = COUNTRIES_DB.map(c => c.id).sort((a,b) => b.length - a.length);
+        const allPrefixes = COUNTRIES_DB.map(c => c.id).sort((a, b) => b.length - a.length);
         if (digits.length > 13) {
             for (const p1 of allPrefixes) {
                 if (digits.startsWith(p1)) {
@@ -147,23 +147,23 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     // --- SCAN IA AUTOMATIQUE (SILENCIEUX) ---
     React.useEffect(() => {
         if (!agent?.id) return;
-        
+
         const scanLeads = () => {
             let dups = 0;
             let badFormats = 0;
             let badCountries = 0;
-            const phones = new Map<string, string>(); 
-            
+            const phones = new Map<string, string>();
+
             const duplicateNames: string[] = [];
             const duplicateIds: string[] = [];
             const formatErrorNames: string[] = [];
             const formatErrorIds: string[] = [];
             const countryErrorNames: string[] = [];
             const countryErrorIds: string[] = [];
-            
+
             filteredLeadsByCampaign.forEach(l => {
                 const smart = smartParsePhone(l.phone);
-                
+
                 // Detection Format
                 if (smart.primary !== l.phone && smart.primary !== '') {
                     badFormats++;
@@ -173,7 +173,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                 // Detection Pays (Système Elite Triangulation)
                 const geo = resolveGeographicTruth(smart.detectedCountry, l.country, l.city, smart.isExplicit);
-                
+
                 if (geo.winner && geo.winner !== l.country) {
                     const currentC = (l.country || '').trim();
                     const isWeak = !currentC || ['SÉNÉGAL', 'SENEGAL', 'AUTRE', 'INCONNU', 'N/A', 'VIDE', 'NONE'].includes(currentC.toUpperCase());
@@ -198,7 +198,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 }
             });
 
-            const alerts: any[] = [];
+            const alerts: unknown[] = [];
             if (dups > 0) alerts.push({ type: 'duplicate', count: dups, details: duplicateNames, leadIds: duplicateIds });
             if (badFormats > 0) alerts.push({ type: 'format', count: badFormats, details: formatErrorNames, leadIds: formatErrorIds });
             if (badCountries > 0) alerts.push({ type: 'country', count: badCountries, details: countryErrorNames, leadIds: countryErrorIds });
@@ -217,7 +217,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         const isDialogue = !['nouveau', 'injoignable', 'repondeur', 'faux_numero'].some(k => sid.includes(k));
         const newMetadata = sanitizeForPostgres({ ...(lead.metadata || {}), everReached: lead.metadata?.everReached || isDialogue });
         const newStatus = statuses.find(s => s.id === newStatusId);
-        setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
+        setLeads((prev: unknown[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
         await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
     };
 
@@ -229,14 +229,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 .from('leads')
                 .update({ notes: tempNoteValue })
                 .eq('id', leadId);
-            
+
             if (error) throw error;
-            
-            setLeads((prev: any[]) => prev.map(l => l.id === leadId ? { ...l, notes: tempNoteValue } : l));
+
+            setLeads((prev: unknown[]) => prev.map(l => l.id === leadId ? { ...l, notes: tempNoteValue } : l));
             addToast("Note mise à jour !", "success");
             setEditingNoteId(null);
-        } catch (error: any) {
-            addToast(error.message, "error");
+        } catch {
+            addToast((error as Error).message, "error");
         } finally {
             setIsSavingNote(false);
         }
@@ -247,7 +247,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
         // LOGIQUE : Priorité à la sélection, sinon on prend le filtrage actuel
         let leadsToExport = [];
-        
+
         if (selectedLeadIds.length > 0) {
             leadsToExport = leads.filter(l => selectedLeadIds.includes(l.id));
         } else {
@@ -260,25 +260,25 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
             });
         }
 
-        const columnMap: Record<string, string> = { 
-            'firstName': 'Prénom', 
-            'lastName': 'Nom', 
-            'email': 'Email', 
-            'phone': 'Téléphone', 
+        const columnMap: Record<string, string> = {
+            'firstName': 'Prénom',
+            'lastName': 'Nom',
+            'email': 'Email',
+            'phone': 'Téléphone',
             'country': 'Pays',
-            'statusId': 'Statut', 
+            'statusId': 'Statut',
             'fieldOfInterest': 'Filière',
             'score': 'Score',
             'notes': 'Notes'
         };
 
         const data = leadsToExport.map(l => {
-            const row: Record<string, any> = {};
+            const row: Record<string, unknown> = {};
             const countryInfo = findCountryInfo(l.country, l.phone);
             const intelligentPhone = formatIntelligentPhone(l.phone, countryInfo);
 
             selectedColumns.forEach(id => {
-                let val = (l as any)[id];
+                let val = (l as unknown)[id];
                 if (id === 'statusId') val = l.status?.label || l.statusId;
                 if (id === 'phone') val = intelligentPhone;
                 if (id === 'country') val = countryInfo ? countryInfo.name : l.country;
@@ -294,7 +294,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         addToast(`${leadsToExport.length} prospects exportés.`, "success");
     };
 
-    const getPhaseLabel = (lead: any) => {
+    const getPhaseLabel = (lead: unknown) => {
         const sid = (lead.statusId || '').toLowerCase();
         // ROADMAP: Décision (Clôture)
         if (['admis', 'inscription_attente', 'inscrit'].includes(sid)) return 'Décision';
@@ -308,7 +308,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const handleBulkAssign = async (targetAgentId: string) => {
         if (selectedLeadIds.length === 0) return;
-        
+
         const confirmed = await showConfirm(
             "Réattribution de masse",
             `Voulez-vous vraiment réattribuer ${selectedLeadIds.length} prospects ?`
@@ -324,11 +324,11 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
             if (error) throw error;
 
-            setLeads((prev: any[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
+            setLeads((prev: unknown[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
             addToast(`${selectedLeadIds.length} prospects réattribués avec succès !`, "success");
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
-        } catch (error) {
+        } catch {
             addToast("Erreur lors de la réattribution.", "error");
         } finally {
             setIsReassigning(false);
@@ -349,7 +349,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         setIsReassigning(true);
         try {
             const leadsPerAgent = Math.ceil(selectedLeadIds.length / availableAgents.length);
-            
+
             for (let i = 0; i < availableAgents.length; i++) {
                 const targetAgent = availableAgents[i];
                 const start = i * leadsPerAgent;
@@ -360,7 +360,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     .from('leads')
                     .update({ agent_id: targetAgent.id })
                     .in('id', chunk);
-                
+
                 if (error) throw error;
             }
 
@@ -369,14 +369,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
             else if (onClose) onClose();
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
-        } catch (error) {
+        } catch {
             addToast("Erreur lors de la répartition IA.", "error");
         } finally {
             setIsReassigning(false);
         }
     };
 
-    const handleSelectAll = (filteredLeads: any[]) => {
+    const handleSelectAll = (filteredLeads: unknown[]) => {
         if (selectedLeadIds.length === filteredLeads.length) {
             setSelectedLeadIds([]);
         } else {
@@ -390,35 +390,35 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const handleMassHarmonize = async () => {
         const confirmed = await showConfirm(
-            "Nettoyage IA & Fusion des Doublons", 
+            "Nettoyage IA & Fusion des Doublons",
             `L'Assistant IA va :\n1. SUPPRIMER définitivement les fiches en double (même numéro)\n2. Corriger les formats (Bénin +229, indicatifs, etc.)\n3. Uniformiser les identités (NOMS en majuscules, Prénoms propres)\n4. Nettoyer les pays et les caractères invisibles\n\nCette action est irréversible pour les doublons. Continuer ?`
         );
-        
+
         if (!confirmed) return;
 
         setIsHarmonizing(true);
         let updatedCount = 0;
         let mergedCount = 0;
-        const seenPhones = new Map<string, boolean>(); 
+        const seenPhones = new Map<string, boolean>();
         const leadsToDelete: string[] = [];
-        const allUpdates: any[] = [];
+        const allUpdates: unknown[] = [];
 
         try {
             const currentLeads = [...leads];
-            
+
             for (const lead of currentLeads) {
                 const smart = smartParsePhone(lead.phone);
                 const formattedPhone = smart.primary;
                 const cleanKey = formattedPhone.replace(/\D/g, '');
 
-                const updates: any = {};
+                const updates: Record<string, string | undefined> = {};
                 let hasChanges = false;
 
                 const emailKey = (lead.email || '').trim().toLowerCase();
 
                 if ((cleanKey && cleanKey.length > 5) || (emailKey && emailKey.includes('@'))) {
-                    const isDuplicate = (cleanKey && cleanKey.length > 5 && seenPhones.has(cleanKey)) || 
-                                      (emailKey && emailKey.includes('@') && seenPhones.has(emailKey));
+                    const isDuplicate = (cleanKey && cleanKey.length > 5 && seenPhones.has(cleanKey)) ||
+                        (emailKey && emailKey.includes('@') && seenPhones.has(emailKey));
 
                     if (isDuplicate) {
                         leadsToDelete.push(lead.id);
@@ -428,7 +428,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     if (cleanKey && cleanKey.length > 5) seenPhones.set(cleanKey, true);
                     if (emailKey && emailKey.includes('@')) seenPhones.set(emailKey, true);
                 }
-                
+
                 if (formattedPhone !== lead.phone && formattedPhone !== '') {
                     updates.phone = formattedPhone;
                     if (smart.note) {
@@ -453,9 +453,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                     const targetDb = COUNTRIES_DB.find(c => c.name === geo.winner);
                     const currentPhoneDb = COUNTRIES_DB.find(c => smart.detectedCountry && c.name === smart.detectedCountry);
-                    
+
                     if (targetDb) {
-                        let phoneDigits = (updates.phone || lead.phone).replace(/\D/g, '');
+                        const phoneDigits = (updates.phone || lead.phone).replace(/\D/g, '');
                         if (currentPhoneDb && phoneDigits.startsWith(currentPhoneDb.id)) {
                             const newPhone = '+' + targetDb.id + phoneDigits.substring(currentPhoneDb.id.length);
                             if (newPhone !== (updates.phone || lead.phone)) { updates.phone = newPhone; hasChanges = true; }
@@ -469,7 +469,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     }
                 }
 
-                const cleanFirst = (lead.firstName || '').trim().split(' ').map((s: any) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
+                const cleanFirst = (lead.firstName || '').trim().split(' ').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join(' ');
                 const cleanLast = (lead.lastName || '').trim().toUpperCase();
                 if (cleanFirst && cleanFirst !== lead.firstName) { updates.firstName = cleanFirst; hasChanges = true; }
                 if (cleanLast && cleanLast !== lead.lastName) { updates.lastName = cleanLast; hasChanges = true; }
@@ -480,7 +480,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 // --- COLLECTE DES CHANGEMENTS RÉELS ---
                 if (hasChanges) {
                     // On ne garde que les champs CRM purs pour l'update
-                    const cleanUpdates: any = {};
+                    const cleanUpdates: Record<string, string> = {};
                     if (updates.firstName !== undefined) cleanUpdates.first_name = updates.firstName;
                     if (updates.lastName !== undefined) cleanUpdates.last_name = updates.lastName;
                     if (updates.email !== undefined) cleanUpdates.email = updates.email;
@@ -515,9 +515,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         .from('leads')
                         .update(payload)
                         .eq('id', item.id);
-                    
+
                     if (error) {
-                        console.error(`Erreur Lead ${item.id}:`, error.message);
+                        console.error(`Erreur Lead ${item.id}:`, (error as Error).message);
                         throw error;
                     }
                 }));
@@ -525,8 +525,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
             addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés définitivement.`, "success");
             if (onRefresh) await onRefresh();
-            else if (onClose) onClose(); 
-        } catch (error: any) {
+            else if (onClose) onClose();
+        } catch {
             console.error("Détail Erreur IA:", error);
             addToast(`Erreur : ${error?.message || "Échec du nettoyage IA"}`, "error");
         } finally {
@@ -537,10 +537,10 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
     return (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: window.innerWidth < 768 ? '0' : '1.5rem' }} onClick={onClose}>
             <div className="card" style={{ width: '100%', maxWidth: '100vw', height: window.innerWidth < 768 ? '100vh' : '96vh', maxHeight: '100vh', overflowY: 'auto', background: '#0a0b0d', borderRadius: window.innerWidth < 768 ? '0' : '32px', border: '1px solid rgba(255,255,255,0.1)' }} onClick={e => e.stopPropagation()}>
-                
+
                 <div style={{ padding: window.innerWidth < 768 ? '1.5rem' : '2rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth < 768 ? '0.75rem' : '2rem' }}>
-                        <div style={{ width: window.innerWidth < 768 ? '40px' : '74px', height: window.innerWidth < 768 ? '40px' : '74px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: window.innerWidth < 768 ? '1rem' : '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: any) => n[0]).join('') : '?'}</div>
+                        <div style={{ width: window.innerWidth < 768 ? '40px' : '74px', height: window.innerWidth < 768 ? '40px' : '74px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: window.innerWidth < 768 ? '1rem' : '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: unknown) => n[0]).join('') : '?'}</div>
                         <div>
                             <h2 style={{ fontSize: window.innerWidth < 768 ? '1.25rem' : '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{window.innerWidth < 768 ? 'Performance' : `Centre de Performance : ${agent?.name || 'Inconnu'}`}</h2>
                             <p style={{ color: 'var(--text-muted)', fontSize: window.innerWidth < 768 ? '0.75rem' : '1.125rem' }}>Vue stratégique 360° • Temps réel</p>
@@ -552,7 +552,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                 <div style={{ padding: window.innerWidth < 768 ? '1rem' : '2.5rem 3rem' }}>
 
-                    
+
                     {/* LES 5 INDICATEURS MAÎTRES */}
                     <div className="stat-grid" style={{ marginBottom: '3rem' }}>
                         {[
@@ -572,7 +572,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                     {/* ANALYTICS COMPLEXE */}
                     <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem', marginBottom: '3.5rem' }}>
-                        
+
                         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '32px', padding: window.innerWidth < 768 ? '1.5rem' : '2.5rem', border: '1px solid rgba(255,255,255,0.06)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2.5rem' }}>
                                 <Activity size={24} color="var(--primary)" />
@@ -581,7 +581,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             <div className="stat-grid" style={{ gap: '2rem' }}>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Taux de Conversion</div>
-                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--success)' }}>{conversionRate}<span style={{fontSize: '1rem'}}>%</span></div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--success)' }}>{conversionRate}<span style={{ fontSize: '1rem' }}>%</span></div>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Inscrits / Réel parlé</div>
                                     <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', marginTop: '15px' }}>
                                         <div style={{ height: '100%', width: `${conversionRate}%`, background: 'var(--success)', borderRadius: '3px' }}></div>
@@ -589,7 +589,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 </div>
                                 <div style={{ textAlign: 'center' }}>
                                     <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'uppercase', fontWeight: 800, marginBottom: '0.75rem' }}>Taux de Contact</div>
-                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--accent)' }}>{contactRate}<span style={{fontSize: '1rem'}}>%</span></div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: 950, color: 'var(--accent)' }}>{contactRate}<span style={{ fontSize: '1rem' }}>%</span></div>
                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Contactés / Total</div>
                                     <div style={{ height: '6px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', marginTop: '15px' }}>
                                         <div style={{ height: '100%', width: `${contactRate}%`, background: 'var(--accent)', borderRadius: '3px' }}></div>
@@ -610,14 +610,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <h3 style={{ fontSize: '1.5rem', fontWeight: 900 }}>Top Filières</h3>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                {topFields.map(([field, count]: any, i) => (
+                                {topFields.map(([field, count]: unknown, i) => (
                                     <div key={i}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '0.5rem' }}>
                                             <span style={{ fontWeight: 800 }}>{field}</span>
                                             <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>{count}</span>
                                         </div>
                                         <div style={{ height: '10px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '5px' }}>
-                                            <div style={{ height: '100%', width: `${totalLeads > 0 ? (count/totalLeads)*100 : 0}%`, background: i === 0 ? 'var(--primary)' : i === 1 ? 'var(--accent)' : 'var(--warning)', borderRadius: '5px' }}></div>
+                                            <div style={{ height: '100%', width: `${totalLeads > 0 ? (count / totalLeads) * 100 : 0}%`, background: i === 0 ? 'var(--primary)' : i === 1 ? 'var(--accent)' : 'var(--warning)', borderRadius: '5px' }}></div>
                                         </div>
                                     </div>
                                 ))}
@@ -638,12 +638,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                                    <div style={{ 
-                                        width: '48px', 
-                                        height: '48px', 
-                                        borderRadius: '14px', 
-                                        background: 'linear-gradient(135deg, var(--primary), var(--accent))', 
-                                        display: 'grid', 
+                                    <div style={{
+                                        width: '48px',
+                                        height: '48px',
+                                        borderRadius: '14px',
+                                        background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                                        display: 'grid',
                                         placeItems: 'center',
                                         boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)'
                                     }}>
@@ -658,17 +658,17 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                                     {aiAlerts.length > 0 && (
-                                        <button 
+                                        <button
                                             onClick={() => setShowAiDetails(!showAiDetails)}
                                             style={{ color: 'white', border: '1px solid rgba(255,255,255,0.1)', padding: '0.6rem 1rem', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600 }}
                                         >
                                             {showAiDetails ? 'Masquer' : 'Voir les Détails'}
                                         </button>
                                     )}
-                                    <button 
+                                    <button
                                         onClick={handleMassHarmonize}
                                         disabled={isHarmonizing}
-                                        className="btn btn-primary" 
+                                        className="btn btn-primary"
                                         style={{ padding: '0.6rem 1.2rem', borderRadius: '12px', fontSize: '0.85rem' }}
                                     >
                                         {isHarmonizing ? 'Nettoyage...' : 'Tout Nettoyer'}
@@ -681,12 +681,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     {/* ONGLETS DE CAMPAGNE (Multi-campagnes detectées) */}
                     {(agentCampaigns.length > 1 || selectedCampaignTab !== 'all') && (
                         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: 'fit-content' }}>
-                            <button 
+                            <button
                                 onClick={() => setSelectedCampaignTab('all')}
-                                style={{ 
-                                    padding: '10px 20px', 
-                                    borderRadius: '12px', 
-                                    border: 'none', 
+                                style={{
+                                    padding: '10px 20px',
+                                    borderRadius: '12px',
+                                    border: 'none',
                                     background: selectedCampaignTab === 'all' ? 'var(--primary)' : 'transparent',
                                     color: selectedCampaignTab === 'all' ? 'white' : 'var(--text-muted)',
                                     fontWeight: 700,
@@ -700,13 +700,13 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             {agentCampaigns.map(c => {
                                 const count = leads.filter(l => l.campaignId === c.id).length;
                                 return (
-                                    <button 
+                                    <button
                                         key={c.id}
                                         onClick={() => setSelectedCampaignTab(c.id)}
-                                        style={{ 
-                                            padding: '10px 20px', 
-                                            borderRadius: '12px', 
-                                            border: 'none', 
+                                        style={{
+                                            padding: '10px 20px',
+                                            borderRadius: '12px',
+                                            border: 'none',
                                             background: selectedCampaignTab === c.id ? 'var(--primary)' : 'transparent',
                                             color: selectedCampaignTab === c.id ? 'white' : 'var(--text-muted)',
                                             fontWeight: 700,
@@ -731,9 +731,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 </div>
                                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Performance Statuts {selectedCampaignTab !== 'all' ? `(${agentCampaigns.find(c => c.id === selectedCampaignTab)?.name})` : ''}</h3>
                             </div>
-                            <button 
+                            <button
                                 onClick={() => setShowAllStatus(!showAllStatus)}
-                                className="btn" 
+                                className="btn"
                                 style={{ background: 'rgba(255,255,255,0.05)', color: 'white', borderRadius: '12px', fontSize: '0.875rem' }}
                             >
                                 {showAllStatus ? 'Réduire' : 'Voir les 21 statuts'}
@@ -751,12 +751,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 const count = filteredLeadsByCampaign.filter(l => {
                                     const sid = (l.statusId || '').toLowerCase();
                                     const slabel = (l.status?.label || '').toLowerCase();
-                                    
+
                                     // Robust matching
                                     if (st.id === 'nouveau') {
                                         return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
                                     }
-                                    
+
                                     if (st.id === 'inscrit') return ['inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
                                     if (st.id === 'admis') return sid === 'admis' || slabel.includes('admis');
 
@@ -775,8 +775,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         {showAllStatus && (
                             <div style={{ marginTop: '2.5rem', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', padding: '2rem', background: 'rgba(0,0,0,0.2)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.03)', animation: 'slideDown 0.3s ease-out' }}>
                                 {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => {
-                                    const count = leads.filter(l => 
-                                        l.statusId === s.id && 
+                                    const count = leads.filter(l =>
+                                        l.statusId === s.id &&
                                         (selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab)
                                     ).length;
                                     return (
@@ -797,27 +797,27 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <div style={{ padding: '14px', background: 'rgba(99, 102, 241, 0.15)', borderRadius: '18px' }}><Users size={28} color="var(--primary)" /></div>
                                 <h3 style={{ fontSize: '2rem', fontWeight: 950 }}>Registre des Prospects</h3>
                             </div>
-                            
+
                             {/* Filtres Intelligents */}
                             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
                                 <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
                                     <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                    <input 
-                                        type="text" 
-                                        placeholder="Rechercher par nom, email, tél..." 
+                                    <input
+                                        type="text"
+                                        placeholder="Rechercher par nom, email, tél..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="input" 
-                                        style={{ paddingLeft: '45px', width: '100%', borderRadius: '14px', height: '45px' }} 
+                                        className="input"
+                                        style={{ paddingLeft: '45px', width: '100%', borderRadius: '14px', height: '45px' }}
                                     />
                                 </div>
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <div style={{ position: 'relative' }}>
                                         <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                        <select 
+                                        <select
                                             value={filterStatus}
                                             onChange={(e) => setFilterStatus(e.target.value)}
-                                            className="input" 
+                                            className="input"
                                             style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
                                         >
                                             <option value="all">Tous les Statuts</option>
@@ -826,10 +826,10 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     </div>
                                     <div style={{ position: 'relative' }}>
                                         <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                        <select 
+                                        <select
                                             value={filterCountry}
                                             onChange={(e) => setFilterCountry(e.target.value)}
-                                            className="input" 
+                                            className="input"
                                             style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
                                         >
                                             <option value="all">Tous les Pays</option>
@@ -849,15 +849,15 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             </div>
 
                             <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button 
-                                    onClick={handleMassHarmonize} 
+                                <button
+                                    onClick={handleMassHarmonize}
                                     disabled={isHarmonizing}
-                                    className="btn" 
-                                    style={{ 
-                                        padding: '0.9rem 2rem', 
-                                        borderRadius: '18px', 
-                                        fontSize: '0.9rem', 
-                                        fontWeight: 800, 
+                                    className="btn"
+                                    style={{
+                                        padding: '0.9rem 2rem',
+                                        borderRadius: '18px',
+                                        fontSize: '0.9rem',
+                                        fontWeight: 800,
                                         background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1))',
                                         color: '#a855f7',
                                         display: 'flex',
@@ -870,9 +870,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     <Sparkles size={16} className={isHarmonizing ? 'animate-spin' : ''} />
                                     {isHarmonizing ? 'Analyse IA...' : 'Assistant IA'}
                                 </button>
-                                <button 
-                                    onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])} 
-                                    className="btn btn-primary" 
+                                <button
+                                    onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])}
+                                    className="btn btn-primary"
                                     style={{ padding: '0.9rem 2.5rem', borderRadius: '18px', fontSize: '1rem', fontWeight: 900 }}
                                 >
                                     Exporter XLS
@@ -885,7 +885,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <thead>
                                     <tr>
                                         <th style={{ width: '50px' }}>
-                                            <button 
+                                            <button
                                                 onClick={() => {
                                                     const filteredItems = leads.filter(l => {
                                                         const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
@@ -912,7 +912,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <tbody>
                                     {(() => {
                                         const filtered = leads.filter(l => {
-                                            const matchesSearch = 
+                                            const matchesSearch =
                                                 (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                                                 (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                                                 (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -920,151 +920,151 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                             const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
                                             const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
-                                            
+
                                             // ISOLATION IA
                                             if (filterOnlyProblems) {
-                                                const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as any;
+                                                const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as unknown;
                                                 if (!currentAlert?.leadIds?.includes(l.id)) return false;
                                             }
 
                                             return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
-                                        }).sort((a,b) => (b.score || 0) - (a.score || 0));
-                                        
+                                        }).sort((a, b) => (b.score || 0) - (a.score || 0));
+
                                         const startIndex = (currentPage - 1) * itemsPerPage;
                                         return filtered.slice(startIndex, startIndex + itemsPerPage);
                                     })()
-                                        .map((lead: any) => {
-                                        const phase = getPhaseLabel(lead);
-                                        const countryInfo = findCountryInfo(lead.country, lead.phone);
-                                        const intelligentPhone = formatIntelligentPhone(lead.phone, countryInfo);
-                                        const sid = (lead.statusId || '').toLowerCase();
-                                        const isFailed = (sid.includes('injoignable') || sid.includes('repondeur'));
-                                        
-                                        return (
-                                            <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.4s ease', background: highlightedLeadId === lead.id ? 'rgba(99, 102, 241, 0.15)' : selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className={`hover-row ${highlightedLeadId === lead.id ? 'highlighted-row' : ''}`}>
-                                                <td style={{ padding: '1.75rem', textAlign: 'center' }}>
-                                                    <button 
-                                                        onClick={() => toggleLeadSelection(lead.id)}
-                                                        style={{ background: 'transparent', border: 'none', color: selectedLeadIds.includes(lead.id) ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
-                                                    >
-                                                        {selectedLeadIds.includes(lead.id) ? <CheckSquare size={22} /> : <Square size={22} />}
-                                                    </button>
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                                        <div style={{ fontWeight: 900, fontSize: '1.25rem' }}>{lead.firstName} {lead.lastName}</div>
-                                                        {lead.metadata?.everReached && <div style={{ fontSize: '0.7rem', background: 'rgba(34, 197, 94, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontWeight: 900 }}>Contact OK</div>}
-                                                    </div>
-                                                    <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>{lead.email}</div>
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{ fontWeight: 800, fontSize: '1rem', color: 'white' }}>{intelligentPhone}</span>
-                                                    </div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                           📍 {countryInfo ? countryInfo.name : (lead.country || 'Pays inconnu')}
+                                        .map((lead: unknown) => {
+                                            const phase = getPhaseLabel(lead);
+                                            const countryInfo = findCountryInfo(lead.country, lead.phone);
+                                            const intelligentPhone = formatIntelligentPhone(lead.phone, countryInfo);
+                                            const sid = (lead.statusId || '').toLowerCase();
+                                            const isFailed = (sid.includes('injoignable') || sid.includes('repondeur'));
+
+                                            return (
+                                                <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.4s ease', background: highlightedLeadId === lead.id ? 'rgba(99, 102, 241, 0.15)' : selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className={`hover-row ${highlightedLeadId === lead.id ? 'highlighted-row' : ''}`}>
+                                                    <td style={{ padding: '1.75rem', textAlign: 'center' }}>
+                                                        <button
+                                                            onClick={() => toggleLeadSelection(lead.id)}
+                                                            style={{ background: 'transparent', border: 'none', color: selectedLeadIds.includes(lead.id) ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
+                                                        >
+                                                            {selectedLeadIds.includes(lead.id) ? <CheckSquare size={22} /> : <Square size={22} />}
+                                                        </button>
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                                            <div style={{ fontWeight: 900, fontSize: '1.25rem' }}>{lead.firstName} {lead.lastName}</div>
+                                                            {lead.metadata?.everReached && <div style={{ fontSize: '0.7rem', background: 'rgba(34, 197, 94, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontWeight: 900 }}>Contact OK</div>}
                                                         </div>
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div style={{ fontSize: '0.75rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>{phase}</div>
-                                                    <div style={{ fontWeight: 800, fontSize: '1.125rem' }}>{lead.status?.label || lead.statusId}</div>
-                                                </td>
-                                                <td>
-                                                    <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
-                                                        {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map((s: any) => (
-                                                            <option key={s.id} value={s.id}>{s.label}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td style={{ textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
-                                                </td>
-                                                <td>
-                                                     <div 
-                                                        style={{ 
-                                                            fontSize: '0.875rem', 
-                                                            background: 'rgba(255,255,255,0.03)', 
-                                                            padding: '8px 12px', 
-                                                            borderRadius: '15px', 
-                                                            border: '1px solid rgba(255,255,255,0.1)', 
-                                                            minHeight: '60px', 
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: '4px',
-                                                            transition: 'all 0.2s',
-                                                            position: 'relative'
-                                                        }}
-                                                     >
-                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <div 
-                                                                onClick={() => setSelectedLeadForHistory(lead)}
-                                                                style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                                                            >
-                                                                <MessageSquare size={10} /> VOIR HISTORIQUE
+                                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>{lead.email}</div>
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                <span style={{ fontWeight: 800, fontSize: '1rem', color: 'white' }}>{intelligentPhone}</span>
                                                             </div>
-                                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                                {editingNoteId === lead.id ? (
-                                                                    <button 
-                                                                        onClick={() => handleUpdateNote(lead.id)}
-                                                                        disabled={isSavingNote}
-                                                                        style={{ background: 'transparent', border: 'none', color: 'var(--success)', cursor: 'pointer', padding: 0 }}
-                                                                    >
-                                                                        <Check size={14} />
-                                                                    </button>
-                                                                ) : (
-                                                                    <button 
-                                                                        onClick={() => {
-                                                                            setEditingNoteId(lead.id);
-                                                                            setTempNoteValue(lead.notes || "");
-                                                                        }}
-                                                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
-                                                                    >
-                                                                        <Pencil size={14} />
-                                                                    </button>
-                                                                )}
+                                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                📍 {countryInfo ? countryInfo.name : (lead.country || 'Pays inconnu')}
                                                             </div>
-                                                         </div>
-                                                         
-                                                         {editingNoteId === lead.id ? (
-                                                             <textarea 
-                                                                value={tempNoteValue}
-                                                                onChange={(e) => setTempNoteValue(e.target.value)}
-                                                                autoFocus
-                                                                style={{ 
-                                                                    background: 'rgba(0,0,0,0.3)', 
-                                                                    border: '1px solid var(--primary)', 
-                                                                    color: 'white', 
-                                                                    fontSize: '0.8rem', 
-                                                                    padding: '4px', 
-                                                                    borderRadius: '6px', 
-                                                                    width: '100%', 
-                                                                    minHeight: '40px',
-                                                                    resize: 'none',
-                                                                    outline: 'none'
-                                                                }}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter' && e.ctrlKey) handleUpdateNote(lead.id);
-                                                                    if (e.key === 'Escape') setEditingNoteId(null);
-                                                                }}
-                                                             />
-                                                         ) : (
-                                                             <div 
-                                                                onClick={() => {
-                                                                    setEditingNoteId(lead.id);
-                                                                    setTempNoteValue(lead.notes || "");
-                                                                }}
-                                                                style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3, cursor: 'text' }}
-                                                             >
-                                                                {lead.notes ? (lead.notes.length > 60 ? lead.notes.substring(0, 57) + "..." : lead.notes) : "Aucune note..."}
-                                                             </div>
-                                                         )}
-                                                     </div>
-                                                 </td>
-                                            </tr>
-                                        );
-                                    })}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>{phase}</div>
+                                                        <div style={{ fontWeight: 800, fontSize: '1.125rem' }}>{lead.status?.label || lead.statusId}</div>
+                                                    </td>
+                                                    <td>
+                                                        <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
+                                                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map((s: unknown) => (
+                                                                <option key={s.id} value={s.id}>{s.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td style={{ textAlign: 'center' }}>
+                                                        <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
+                                                    </td>
+                                                    <td>
+                                                        <div
+                                                            style={{
+                                                                fontSize: '0.875rem',
+                                                                background: 'rgba(255,255,255,0.03)',
+                                                                padding: '8px 12px',
+                                                                borderRadius: '15px',
+                                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                                minHeight: '60px',
+                                                                display: 'flex',
+                                                                flexDirection: 'column',
+                                                                gap: '4px',
+                                                                transition: 'all 0.2s',
+                                                                position: 'relative'
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                <div
+                                                                    onClick={() => setSelectedLeadForHistory(lead)}
+                                                                    style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                                                >
+                                                                    <MessageSquare size={10} /> VOIR HISTORIQUE
+                                                                </div>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    {editingNoteId === lead.id ? (
+                                                                        <button
+                                                                            onClick={() => handleUpdateNote(lead.id)}
+                                                                            disabled={isSavingNote}
+                                                                            style={{ background: 'transparent', border: 'none', color: 'var(--success)', cursor: 'pointer', padding: 0 }}
+                                                                        >
+                                                                            <Check size={14} />
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setEditingNoteId(lead.id);
+                                                                                setTempNoteValue(lead.notes || "");
+                                                                            }}
+                                                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                                                                        >
+                                                                            <Pencil size={14} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            {editingNoteId === lead.id ? (
+                                                                <textarea
+                                                                    value={tempNoteValue}
+                                                                    onChange={(e) => setTempNoteValue(e.target.value)}
+                                                                    autoFocus
+                                                                    style={{
+                                                                        background: 'rgba(0,0,0,0.3)',
+                                                                        border: '1px solid var(--primary)',
+                                                                        color: 'white',
+                                                                        fontSize: '0.8rem',
+                                                                        padding: '4px',
+                                                                        borderRadius: '6px',
+                                                                        width: '100%',
+                                                                        minHeight: '40px',
+                                                                        resize: 'none',
+                                                                        outline: 'none'
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter' && e.ctrlKey) handleUpdateNote(lead.id);
+                                                                        if (e.key === 'Escape') setEditingNoteId(null);
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <div
+                                                                    onClick={() => {
+                                                                        setEditingNoteId(lead.id);
+                                                                        setTempNoteValue(lead.notes || "");
+                                                                    }}
+                                                                    style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3, cursor: 'text' }}
+                                                                >
+                                                                    {lead.notes ? (lead.notes.length > 60 ? lead.notes.substring(0, 57) + "..." : lead.notes) : "Aucune note..."}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                 </tbody>
                             </table>
                         </div>
@@ -1072,7 +1072,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                         {/* PAGINATION ELITE */}
                         {(() => {
                             const filtered = leads.filter(l => {
-                                const matchesSearch = 
+                                const matchesSearch =
                                     (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                                     (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                                     (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1082,7 +1082,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
 
                                 if (filterOnlyProblems) {
-                                    const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as any;
+                                    const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as unknown;
                                     if (!currentAlert?.leadIds?.includes(l.id)) return false;
                                 }
 
@@ -1094,8 +1094,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', padding: '0 1rem' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                         <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
-                                        <select 
-                                            value={itemsPerPage} 
+                                        <select
+                                            value={itemsPerPage}
                                             onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
                                             className="input"
                                             style={{ padding: '0 10px', borderRadius: '12px', height: '40px', minWidth: '120px', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)' }}
@@ -1106,21 +1106,21 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     </div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <button 
+                                        <button
                                             disabled={currentPage === 1}
                                             onClick={() => setCurrentPage(p => p - 1)}
                                             style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
                                         >
                                             <ChevronLeft size={20} />
                                         </button>
-                                        
+
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <span style={{ fontWeight: 900, color: 'var(--primary)', fontSize: '1.1rem' }}>{currentPage}</span>
                                             <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
                                             <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{totalPages || 1}</span>
                                         </div>
 
-                                        <button 
+                                        <button
                                             disabled={currentPage === totalPages || totalPages === 0}
                                             onClick={() => setCurrentPage(p => p + 1)}
                                             style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: (currentPage === totalPages || totalPages === 0) ? 'rgba(255,255,255,0.1)' : 'white', cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
@@ -1136,22 +1136,22 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                 <div style={{ padding: '2.5rem 3.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)' }}>
                     <button className="btn btn-primary" style={{ padding: '1.25rem 4rem', borderRadius: '20px', fontWeight: 950, fontSize: '1.125rem' }} onClick={onClose}>Fermer le Management</button>
-                    
+
                     {/* BARRE D'ACTION BULK (FLOTTANTE ET FIXE POUR VISIBILITÉ) */}
                     {selectedLeadIds.length > 0 && (
-                        <div style={{ 
-                            position: 'fixed', 
-                            bottom: '40px', 
-                            left: '50%', 
-                            transform: 'translateX(-50%)', 
-                            background: 'var(--primary)', 
-                            padding: '16px 32px', 
-                            borderRadius: '24px', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '24px', 
-                            boxShadow: '0 20px 60px rgba(99, 102, 241, 0.6)', 
-                            zIndex: 2000, 
+                        <div style={{
+                            position: 'fixed',
+                            bottom: '40px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: 'var(--primary)',
+                            padding: '16px 32px',
+                            borderRadius: '24px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '24px',
+                            boxShadow: '0 20px 60px rgba(99, 102, 241, 0.6)',
+                            zIndex: 2000,
                             border: '1px solid rgba(255,255,255,0.3)',
                             animation: 'slideUp 0.3s ease-out'
                         }}>
@@ -1159,23 +1159,23 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'white', color: 'var(--primary)', display: 'grid', placeItems: 'center', fontWeight: 950, fontSize: '1rem' }}>{selectedLeadIds.length}</div>
                                 <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'white' }}>Sélectionné(s)</span>
                             </div>
-                            
+
                             <div style={{ height: '30px', width: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
-                            
+
                             <div style={{ position: 'relative' }}>
-                                <button 
+                                <button
                                     onClick={() => setShowReassignDropdown(!showReassignDropdown)}
-                                    className="btn" 
+                                    className="btn"
                                     disabled={isReassigning}
-                                    style={{ 
-                                        background: 'white', 
-                                        color: 'black', 
-                                        borderRadius: '16px', 
-                                        padding: '12px 24px', 
-                                        display: 'flex', 
-                                        alignItems: 'center', 
-                                        gap: '12px', 
-                                        fontWeight: 900, 
+                                    style={{
+                                        background: 'white',
+                                        color: 'black',
+                                        borderRadius: '16px',
+                                        padding: '12px 24px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        fontWeight: 900,
                                         fontSize: '1rem',
                                         boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
                                         cursor: 'pointer'
@@ -1184,14 +1184,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     {isReassigning ? <Activity className="animate-spin" size={20} /> : <UserPlus size={20} />}
                                     {isReassigning ? 'Transfert...' : 'Lancer le transfert'} <ChevronDown size={14} />
                                 </button>
-                                
+
                                 {showReassignDropdown && (
                                     <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '20px', width: '300px', background: '#1a1b1e', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 25px 50px rgba(0,0,0,0.7)', overflow: 'hidden' }}>
                                         <div style={{ padding: '14px 20px', fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choisir le destinataire</div>
                                         <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                             {agents.filter(a => a.id !== agent?.id).map(a => (
-                                                <button 
-                                                    key={a.id} 
+                                                <button
+                                                    key={a.id}
                                                     onClick={() => handleBulkAssign(a.id)}
                                                     style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: 'none', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
                                                     className="reassign-option"
@@ -1207,7 +1207,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             ))}
                                         </div>
                                         <div style={{ padding: '15px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                            <button 
+                                            <button
                                                 style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', border: 'none', borderRadius: '15px', color: 'white', fontWeight: 950, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4)' }}
                                                 onClick={handleSmartAutoBalance}
                                             >
@@ -1217,17 +1217,17 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     </div>
                                 )}
                             </div>
-                            
+
                             <button onClick={() => setSelectedLeadIds([])} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', width: '36px', height: '36px', borderRadius: '50%', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}><X size={20} /></button>
                         </div>
                     )}
                 </div>
 
                 <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} />
-                <LeadHistoryModal 
-                    isOpen={!!selectedLeadForHistory} 
-                    lead={selectedLeadForHistory} 
-                    onClose={() => setSelectedLeadForHistory(null)} 
+                <LeadHistoryModal
+                    isOpen={!!selectedLeadForHistory}
+                    lead={selectedLeadForHistory}
+                    onClose={() => setSelectedLeadForHistory(null)}
                     onAddNote={async (content) => {
                         if (!selectedLeadForHistory) return;
                         const { data: interactionData, error } = await supabase
@@ -1253,19 +1253,19 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 content: interactionData.content,
                                 createdAt: interactionData.created_at
                             };
-                            
-                            setLeads((prev: any[]) => prev.map(l => 
-                                l.id === selectedLeadForHistory.id 
-                                ? { ...l, interactions: [newInteraction, ...(l.interactions || [])] } 
-                                : l
+
+                            setLeads((prev: unknown[]) => prev.map(l =>
+                                l.id === selectedLeadForHistory.id
+                                    ? { ...l, interactions: [newInteraction, ...(l.interactions || [])] }
+                                    : l
                             ));
-                            
+
                             // Update the local reference for the modal as well
-                            setSelectedLeadForHistory((prev: any) => ({
+                            setSelectedLeadForHistory((prev: unknown) => ({
                                 ...prev,
                                 interactions: [newInteraction, ...(prev.interactions || [])]
                             }));
-                            
+
                             addToast("Note enregistrée avec succès", "success");
                         }
                     }}
@@ -1313,7 +1313,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             if (!filterOnlyProblems) {
                                                 setSearchQuery(nameMatch);
                                             }
-                                            
+
                                             const tableElement = document.querySelector('.table-container');
                                             if (tableElement) tableElement.scrollIntoView({ behavior: 'smooth' });
                                         }}>
@@ -1332,9 +1332,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     );
                                 })}
 
-                                <button 
+                                <button
                                     onClick={() => setFilterOnlyProblems(filterOnlyProblems === alert.type ? null : alert.type)}
-                                    style={{ 
+                                    style={{
                                         marginTop: '1rem',
                                         width: '100%',
                                         padding: '14px',
@@ -1359,13 +1359,13 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     </div>
 
                     <div className="ai-side-panel-footer">
-                        <button 
+                        <button
                             onClick={handleMassHarmonize}
                             disabled={isHarmonizing}
-                            style={{ 
-                                width: '100%', 
-                                padding: '1.25rem', 
-                                borderRadius: '18px', 
+                            style={{
+                                width: '100%',
+                                padding: '1.25rem',
+                                borderRadius: '18px',
                                 background: 'linear-gradient(135deg, var(--primary), var(--accent))',
                                 border: 'none',
                                 color: 'white',

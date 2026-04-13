@@ -8,7 +8,7 @@ import { usePopup } from './Popup';
 import OutcomeModal from './OutcomeModal';
 
 interface PipelineProps {
-    profile: any;
+    profile: import('../types').Profile | null;
     leads: StudentLead[];
     setLeads: React.Dispatch<React.SetStateAction<StudentLead[]>>;
     campaigns?: Campaign[];
@@ -21,7 +21,11 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
     const { showConfirm } = usePopup();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [selectedStatusId, setSelectedStatusId] = useState<string | undefined>(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
+
+    const isAdmin = profile?.role === 'admin';
+    const myLeads = isAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
 
     const moveLead = async (leadId: string, newStatusId: string) => {
         const { error } = await supabase
@@ -30,7 +34,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
             .eq('id', leadId);
 
         if (error) {
-            addToast("Erreur lors du déplacement : " + error.message, "error");
+            addToast("Erreur lors du déplacement : " + (error as Error).message, "error");
             return;
         }
 
@@ -59,8 +63,8 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 </div>
                 <div className="card" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Prospects actifs</div>
-                        <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>{leads.filter(l => l.statusId !== 'perdu').length}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{isAdmin ? 'Prospects actifs' : 'Mes prospects actifs'}</div>
+                        <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>{myLeads.filter(l => l.statusId !== 'perdu').length}</div>
                     </div>
                 </div>
             </div>
@@ -94,7 +98,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                     { name: "CANDIDATURE", keywords: ['rdv_planifie', 'dossier_recu'] },
                     { name: "DÉCISION", keywords: ['admis', 'inscription_attente', 'inscrit'] }
                 ].map((phase) => {
-                    const phaseStatuses = statuses.filter(s => 
+                    const phaseStatuses = statuses.filter(s =>
                         phase.keywords.some(k => s.id.toLowerCase().includes(k) || s.label.toLowerCase().includes(k))
                     );
 
@@ -102,11 +106,11 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
 
                     return (
                         <div key={phase.name} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <div style={{ 
-                                fontSize: '0.7rem', 
-                                fontWeight: 800, 
-                                color: 'var(--primary)', 
-                                letterSpacing: '0.15em', 
+                            <div style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                                color: 'var(--primary)',
+                                letterSpacing: '0.15em',
                                 background: 'rgba(99, 102, 241, 0.08)',
                                 padding: '8px 16px',
                                 borderRadius: '8px',
@@ -136,12 +140,12 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                                                 <h3 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{status.label}</h3>
                                             </div>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '6px', color: 'var(--text-muted)' }}>
-                                                {leads.filter(d => d.statusId === status.id).length}
+                                                {myLeads.filter(d => d.statusId === status.id).length}
                                             </span>
                                         </div>
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                                            {leads.filter(d => d.statusId === status.id).map((lead) => (
+                                            {myLeads.filter(d => d.statusId === status.id).map((lead) => (
                                                 <div key={lead.id} className="card" style={{
                                                     padding: '1rem',
                                                     transition: 'all 0.2s ease',
@@ -163,7 +167,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                                                                     outline: 'none'
                                                                 }}
                                                             >
-                                                                    {[...statuses].sort((a,b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                                {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
                                                             </select>
                                                             <MoreHorizontal size={14} color="var(--text-muted)" />
                                                         </div>
@@ -206,7 +210,7 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 })}
             </div>
 
-            <OutcomeModal 
+            <OutcomeModal
                 isOpen={!!selectedLeadForOutcome}
                 lead={selectedLeadForOutcome}
                 onClose={() => setSelectedLeadForOutcome(null)}

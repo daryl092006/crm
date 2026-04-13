@@ -4,17 +4,27 @@ import Dashboard from './components/Dashboard'
 import Campaigns from './components/Campaigns'
 import Agents from './components/Agents'
 import Settings from './components/Settings'
-import Profile from './components/Profile'
+import ProfileComponent from './components/Profile'
+import Pipeline from './components/Pipeline'
+import Leads from './components/Leads'
 import { supabase } from './supabaseClient'
-import type { StudentLead, Campaign, Agent, LeadStatus } from './types'
+import type { StudentLead, Campaign, Agent, LeadStatus, Profile } from './types'
 import './index.css'
 import { ToastProvider } from './components/Toast'
 import OnboardingTour from './components/OnboardingTour'
+import { Login } from './components/Login'
 import { PopupProvider } from './components/Popup'
 import { Menu, X, Target } from 'lucide-react';
+import ActivateAccount from './components/ActivateAccount';
 
 function App() {
-  // --- BYPASS AUTH MODE ---
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('token');
+    if (t) setToken(t);
+  }, []);
   const [activeTab, setActiveTab] = useState(localStorage.getItem('crm_active_tab') || 'dashboard')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false) // New state for sidebar visibility
 
@@ -33,8 +43,10 @@ function App() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [statuses, setStatuses] = useState<LeadStatus[]>([])
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedCampaignId, setSelectedCampaignId] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
 
 
   useEffect(() => {
@@ -45,6 +57,14 @@ function App() {
 
     // Chargement immédiat des données
     fetchData();
+
+    // --- AUTH STATE LISTENER ---
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      console.log("Auth event:", event);
+      if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
+        fetchData();
+      }
+    });
 
     // --- REALTIME SUBSCRIPTION ---
     // Listen for changes in the database and refresh data automatically
@@ -73,6 +93,7 @@ function App() {
       .subscribe()
 
     return () => {
+      subscription.unsubscribe();
       supabase.removeChannel(channel);
       clearTimeout(timeout);
     }
@@ -83,17 +104,46 @@ function App() {
     setLoading(true)
     console.log("--- Fetching CRM Data (Direct Access) ---");
     try {
-      // Configuration forcée du profil (Plus besoin de session !)
-      const mockProfile = {
-        id: '00000000-0000-0000-0000-000000000000',
-        organization_id: '00000000-0000-0000-0000-000000000000',
-        full_name: 'Direction / Système',
-        role: 'admin' as 'admin',
-        email: 'admin@elitecrm.dev'
-      };
-      setProfile(mockProfile);
+      // 1. Get Session
+      const { data: { session } } = await supabase.auth.getSession();
 
-      // 1. Fetch Statuses
+      if (!session) {
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fetch Profile from DB based on auth ID
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        console.error("Profile fetch error:", profileError);
+        // If no profile but auth exists, we might need to sign out or show error
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      setProfile({
+        id: profileData.id,
+        organization_id: profileData.organization_id,
+        full_name: profileData.full_name,
+        role: profileData.role,
+        email: profileData.email,
+        created_at: profileData.created_at,
+        must_change_password: profileData.must_change_password
+      });
+
+      // If password change is required, force redirect to profile tab
+      if (profileData.must_change_password) {
+        setActiveTab('profile');
+      }
+
+      // 1. Fetch Statuses (renumbered internal steps)
       const { data: statusesData } = await supabase.from('lead_statuses').select('*').order('label');
       if (statusesData) {
         setStatuses(statusesData.map(s => ({
@@ -179,19 +229,19 @@ function App() {
       ];
 
       const allowedIds = requiredStatuses.map(rs => rs.id);
-      
+
       // Delete any status in DB that is NOT in our required list
       const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
       if (toDelete.length > 0) {
         console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
         await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
-        
+
         // ROADMAP REPAIR: Move all leads with "illegal" statuses back to 'nouveau'
         // This fixes why the user was still seeing old labels
         await supabase.from('leads')
           .update({ status_id: 'nouveau' })
           .not('status_id', 'in', `(${allowedIds.join(',')})`);
-          
+
         console.log("Database synchronized: legacy statuses migrated to 'nouveau'");
       }
 
@@ -235,7 +285,7 @@ function App() {
         column_mappings: c.column_mappings
       })));
 
-      if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000').map(a => {
+      if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000' && a.role !== 'admin').map((a: any): Agent => {
         const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
         const assignedCount = agentLeads.length;
 
@@ -251,8 +301,8 @@ function App() {
         }).length;
 
         const reachedCount = contactedCount - pasReponduCount;
-        
-        const inscribedCount = agentLeads.filter((l: any) => 
+
+        const inscribedCount = agentLeads.filter((l: any) =>
           ['admis', 'inscription_attente', 'inscrit'].some(k => (l.status_id || '').toLowerCase().includes(k))
         ).length;
 
@@ -276,7 +326,6 @@ function App() {
         const avgResponseTimeHours = validTimes.length > 0
           ? (validTimes.reduce((a, b) => a + b, 0) / validTimes.length) / (1000 * 60 * 60)
           : 0;
-
         return {
           id: a.id,
           organizationId: a.organization_id,
@@ -287,7 +336,9 @@ function App() {
           leadsAssigned: assignedCount,
           overdueTasksCount: 0,
           conversionRate: rate,
-          avgResponseTime: Number(avgResponseTimeHours.toFixed(1))
+          avgResponseTime: Number(avgResponseTimeHours.toFixed(1)),
+          isActive: a.is_active !== false,
+          mustChangePassword: a.must_change_password || false
         };
       }))
 
@@ -303,6 +354,14 @@ function App() {
   const handleUpdateLeads = async (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
     if (typeof newLeads === 'function') setLeads(newLeads(leads));
     else setLeads(newLeads);
+  }
+
+  if (token) {
+    return (
+      <ToastProvider>
+        <ActivateAccount />
+      </ToastProvider>
+    );
   }
 
   if (loading) {
@@ -322,54 +381,87 @@ function App() {
     <ToastProvider>
       <PopupProvider>
         <OnboardingTour />
-        
+
         {/* MOBILE HEADER */}
         <div className="mobile-header">
-           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{
-                    width: '32px',
-                    height: '32px',
-                    background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                    borderRadius: '8px',
-                    display: 'grid',
-                    placeItems: 'center'
-                }}>
-                    <Target size={18} color="white" />
-                </div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>EliteCRM</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+              borderRadius: '8px',
+              display: 'grid',
+              placeItems: 'center'
+            }}>
+              <Target size={18} color="white" />
             </div>
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
-            >
-              {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>EliteCRM</h2>
+          </div>
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+          >
+            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
         </div>
 
         {/* OVERLAY FOR MOBILE */}
-        <div 
-          className={`overlay ${isSidebarOpen ? 'show' : ''}`} 
+        <div
+          className={`overlay ${isSidebarOpen ? 'show' : ''}`}
           onClick={() => setIsSidebarOpen(false)}
         />
 
         <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-          <Sidebar 
-            activeTab={activeTab} 
+          <Sidebar
+            activeTab={activeTab}
             setActiveTab={(tab) => {
               setActiveTab(tab);
               setIsSidebarOpen(false);
-            }} 
+            }}
+            profile={profile}
           />
         </div>
 
         <main className="main-content">
-          {activeTab === 'dashboard' && <Dashboard leads={leads} campaigns={campaigns} statuses={statuses} />}
+          {activeTab === 'dashboard' && (
+            <Dashboard
+              leads={leads}
+              campaigns={campaigns}
+              statuses={statuses}
+              setActiveTab={setActiveTab}
+              setStatusFilter={setStatusFilter}
+              selectedCampaignId={selectedCampaignId}
+              setSelectedCampaignId={setSelectedCampaignId}
+              profile={profile}
+            />
+          )}
+          {activeTab === 'pipeline' && (
+            <Pipeline
+              profile={profile}
+              leads={leads}
+              setLeads={handleUpdateLeads as any}
+              campaigns={campaigns}
+              agents={agents}
+              statuses={statuses}
+            />
+          )}
+          {activeTab === 'leads' && (
+            <Leads
+              leads={leads}
+              statuses={statuses}
+              campaigns={campaigns}
+              onRefresh={fetchData}
+              profile={profile}
+            />
+          )}
           {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
           {activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
 
 
           {activeTab === 'settings' && <Settings />}
-          {activeTab === 'profile' && <Profile profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
+          {activeTab === 'profile' && <ProfileComponent profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
+
+          {!profile && <Login />}
 
         </main>
       </PopupProvider>

@@ -1,0 +1,13 @@
+D:\crm\crm\src\App.tsx:7:8 @typescript-eslint/no-unused-vars
+D:\crm\crm\src\App.tsx:136:61 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:143:18 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:227:61 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:239:55 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:240:57 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:256:54 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:262:50 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:265:63 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:268:63 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:268:74 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:368:165 @typescript-eslint/no-explicit-any
+D:\crm\crm\src\App.tsx:369:125 @typescript-eslint/no-explicit-any
