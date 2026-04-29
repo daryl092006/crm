@@ -28,6 +28,27 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
 
+    const handleUpdateRole = async (agentId: string, newRole: string) => {
+        if (agentId === profile?.id) {
+            addToast("Vous ne pouvez pas modifier votre propre rôle.", "warning");
+            return;
+        }
+
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ role: newRole })
+                .eq('id', agentId);
+
+            if (error) throw error;
+            addToast("Rôle mis à jour avec succès", "success");
+            if (onRefresh) await onRefresh();
+        } catch (error: unknown) {
+            addToast((error as Error).message, "error");
+        }
+    };
+
+
     const handleDeleteAgent = async (agentId: string, agentName: string) => {
         const confirmed = await showConfirm(
             "Supprimer le conseiller",
@@ -86,7 +107,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
     };
 
 
-    const handleAddAgent = async (fullName: string, email: string) => {
+    const handleAddAgent = async (fullName: string, email: string, role: string) => {
         try {
             if (!profile?.organization_id) throw new Error("ID d'organisation introuvable");
 
@@ -105,6 +126,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 body: JSON.stringify({
                     fullName,
                     email: email.trim(),
+                    role,
                     organizationId: profile.organization_id
                 })
             });
@@ -128,32 +150,26 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
     };
 
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div className="animate-fade">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem' }}>
                 <div>
-                    <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Équipe de Conseillers</h1>
-                    <p style={{ color: 'var(--text-muted)' }}>Gérez les performances et l'attribution des prospects.</p>
+                    <h1 style={{ fontSize: '1.75rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Équipe de Conseillers</h1>
+                    <p style={{ color: 'var(--text-muted)', marginTop: '0.2rem', fontSize: '0.875rem' }}>Performances et attribution des prospects.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    <button
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="btn btn-primary"
-                        style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                    >
-                        <UserSquare2 size={18} />
-                        Ajouter un Agent
+                <div style={{ display: 'flex', gap: '0.625rem' }}>
+                    <button onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+                        <UserSquare2 size={16} /> Ajouter un Agent
                     </button>
                 </div>
             </div>
 
 
-            <div className="stat-grid">
-
+            <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', marginBottom: '1.5rem' }}>
                 <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Agent Top Performance</p>
-                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Performance</p>
+                            <h3 style={{ fontSize: '1.375rem', fontWeight: 800, marginTop: '0.5rem' }}>
                                 {(() => {
                                     if (agents.length === 0) return 'Aucun agent';
                                     const topAgent = [...agents].sort((a, b) => b.conversionRate - a.conversionRate)[0];
@@ -162,127 +178,138 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                                 })()}
                             </h3>
                         </div>
-                        <Award size={24} color="#ffd700" />
+                        <div style={{ padding: '8px', background: 'rgba(255,215,0,0.1)', borderRadius: '10px', border: '1px solid rgba(255,215,0,0.2)' }}>
+                            <Award size={20} color="#ffd700" />
+                        </div>
                     </div>
                 </div>
                 <div className="card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Délai moyen de relance</p>
-                            <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginTop: '0.5rem' }}>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Délai moyen de relance</p>
+                            <h3 style={{ fontSize: '1.875rem', fontWeight: 900, marginTop: '0.5rem', letterSpacing: '-0.02em' }}>
                                 {agents.length > 0
                                     ? (agents.reduce((acc, a) => acc + (a.avgResponseTime || 0), 0) / agents.length).toFixed(1)
-                                    : 0}h
+                                    : 0}<span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-muted)', marginLeft: '3px' }}>h</span>
                             </h3>
                         </div>
-                        <TrendingUp size={24} color="var(--success)" />
+                        <div style={{ padding: '8px', background: 'rgba(16,185,129,0.1)', borderRadius: '10px', border: '1px solid rgba(16,185,129,0.2)' }}>
+                            <TrendingUp size={20} color="var(--success)" />
+                        </div>
+                    </div>
+                </div>
+                <div className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Agents actifs</p>
+                            <h3 style={{ fontSize: '1.875rem', fontWeight: 900, marginTop: '0.5rem', letterSpacing: '-0.02em' }}>
+                                {agents.filter(a => a.isActive).length}
+                                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-muted)', marginLeft: '4px' }}>/ {agents.length}</span>
+                            </h3>
+                        </div>
+                        <div style={{ padding: '8px', background: 'rgba(99,102,241,0.1)', borderRadius: '10px', border: '1px solid rgba(99,102,241,0.2)' }}>
+                            <UserSquare2 size={20} color="var(--primary)" />
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="table-container">
-                <table style={{ minWidth: '800px' }}>
+                <table>
                     <thead>
                         <tr>
                             <th>Conseiller</th>
-                            <th>Capacité</th>
-                            <th>Charge (Leads)</th>
-                            <th>Action (Alertes)</th>
+                            <th>Rôle</th>
+                            <th>Niveau</th>
+                            <th>Charge</th>
                             <th>Conv. %</th>
-                            <th>Actions</th>
+                            <th style={{ width: '120px' }}>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {agents.map((agent) => (
-                            <tr key={agent.id}>
+                            <tr key={agent.id} className="hover-row">
                                 <td>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                                         <div style={{
-                                            width: '36px',
-                                            height: '36px',
-                                            borderRadius: '50%',
-                                            background: 'var(--primary)',
-                                            display: 'grid',
-                                            placeItems: 'center',
-                                            fontWeight: 700,
-                                            color: 'white',
-                                            fontSize: '0.875rem',
-                                            opacity: agent.capacityWeight === 1 ? 0.7 : 1
+                                            width: '38px', height: '38px', borderRadius: '12px',
+                                            background: 'linear-gradient(135deg, var(--primary), #8b5cf6)',
+                                            display: 'grid', placeItems: 'center',
+                                            fontWeight: 800, color: 'white', fontSize: '0.8rem',
+                                            flexShrink: 0,
                                         }}>
-                                            {agent.name.split(' ').map(n => n[0]).join('')}
+                                            {agent.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                                         </div>
                                         <div>
-                                            <div style={{ fontWeight: 600 }}>{agent.name}</div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{agent.email}</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{agent.name}</div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '1px' }}>{agent.email}</div>
                                         </div>
                                     </div>
+                                </td>
+                                <td>
+                                    <select
+                                        value={agent.role}
+                                        onChange={(e) => handleUpdateRole(agent.id, e.target.value)}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.05)',
+                                            border: '1px solid var(--border)',
+                                            borderRadius: '8px',
+                                            color: 'white',
+                                            fontSize: '0.75rem',
+                                            padding: '4px 8px',
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        <option value="agent">Agent</option>
+                                        <option value="super_agent">Super Agent</option>
+                                        <option value="observer">Observateur</option>
+                                        <option value="super_admin">Super Admin</option>
+                                    </select>
                                 </td>
                                 <td>
                                     <span style={{
-                                        padding: '4px 8px',
-                                        borderRadius: '6px',
-                                        fontSize: '0.75rem',
-                                        fontWeight: 600,
-                                        background: agent.capacityWeight === 3 ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.05)',
-                                        color: agent.capacityWeight === 3 ? '#a78bfa' : 'white',
-                                        border: agent.capacityWeight === 3 ? '1px solid rgba(139, 92, 246, 0.2)' : '1px solid var(--border)'
+                                        padding: '3px 9px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700,
+                                        background: agent.capacityWeight === 3 ? 'rgba(139,92,246,0.12)' : agent.capacityWeight === 2 ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.05)',
+                                        color: agent.capacityWeight === 3 ? '#a78bfa' : agent.capacityWeight === 2 ? 'var(--primary)' : 'var(--text-muted)',
+                                        border: `1px solid ${agent.capacityWeight === 3 ? 'rgba(139,92,246,0.25)' : agent.capacityWeight === 2 ? 'rgba(99,102,241,0.25)' : 'var(--border)'}`,
                                     }}>
-                                        {agent.capacityWeight === 3 ? 'Senior (x3)' : agent.capacityWeight === 2 ? 'Standard (x2)' : 'Junior (x1)'}
+                                        {agent.capacityWeight === 3 ? 'Senior' : agent.capacityWeight === 2 ? 'Standard' : 'Junior'}
                                     </span>
                                 </td>
                                 <td>
-                                    <div style={{ fontWeight: 700 }}>{agent.leadsAssigned} leads</div>
-                                    <div style={{ width: '100px', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', marginTop: '0.5rem' }}>
-                                        <div style={{ width: `${Math.min((agent.leadsAssigned / (agent.capacityWeight * 20)) * 100, 100)}%`, height: '100%', background: agent.leadsAssigned > (agent.capacityWeight * 20) ? 'var(--danger)' : 'var(--primary)', borderRadius: '2px' }}></div>
+                                    <div style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '5px' }}>{agent.leadsAssigned} prospects</div>
+                                    <div style={{ width: '90px', height: '3px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px' }}>
+                                        <div style={{
+                                            width: `${Math.min((agent.leadsAssigned / (agent.capacityWeight * 20)) * 100, 100)}%`,
+                                            height: '100%',
+                                            background: agent.leadsAssigned > (agent.capacityWeight * 20) ? 'var(--danger)' : 'var(--primary)',
+                                            borderRadius: '2px',
+                                            transition: 'width 0.3s ease'
+                                        }} />
                                     </div>
                                 </td>
                                 <td>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        {agent.overdueTasksCount > 0 ? (
-                                            <span style={{ color: 'var(--danger)', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                <TrendingUp size={14} style={{ transform: 'rotate(90deg)' }} />
-                                                {agent.overdueTasksCount} en retard
-                                            </span>
-                                        ) : (
-                                            <span style={{ color: 'var(--success)', fontSize: '0.875rem' }}>À jour</span>
-                                        )}
-                                    </div>
+                                    <span style={{ fontWeight: 800, fontSize: '1rem', color: agent.conversionRate > 20 ? 'var(--success)' : agent.conversionRate > 10 ? 'var(--warning)' : 'var(--text-muted)' }}>
+                                        {agent.conversionRate}%
+                                    </span>
                                 </td>
                                 <td>
-                                    <div style={{ fontWeight: 700, color: 'var(--success)' }}>{agent.conversionRate}%</div>
-                                </td>
-                                <td>
-                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.375rem' }}>
                                         <button
                                             onClick={() => setSelectedAgent(agent)}
-                                            className="btn"
-                                            style={{
-                                                padding: '6px',
-                                                background: 'rgba(255,255,255,0.05)',
-                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                color: 'var(--text-muted)',
-                                                cursor: 'pointer',
-                                                borderRadius: '8px'
-                                            }}
-                                            title="Statistiques"
+                                            className="btn btn-ghost"
+                                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', fontWeight: 700 }}
                                         >
-                                            <MoreVertical size={18} />
+                                            Stats
                                         </button>
                                         <button
                                             onClick={() => handleDeleteAgent(agent.id, agent.name)}
                                             disabled={isDeleting === agent.id}
-                                            className="btn"
-                                            style={{
-                                                padding: '6px',
-                                                background: 'rgba(239, 68, 68, 0.1)',
-                                                border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                color: 'var(--danger)',
-                                                cursor: 'pointer',
-                                                borderRadius: '8px'
-                                            }}
+                                            className="btn btn-danger"
+                                            style={{ padding: '0.4rem 0.625rem', fontSize: '0.75rem' }}
                                             title="Supprimer"
                                         >
-                                            <Trash2 size={18} className={isDeleting === agent.id ? 'animate-spin' : ''} />
+                                            <Trash2 size={14} />
                                         </button>
                                     </div>
                                 </td>
@@ -301,6 +328,7 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
                 campaigns={campaigns}
                 onClose={() => setSelectedAgent(null)}
                 onRefresh={onRefresh}
+                profile={profile}
             />
 
             <AddAgentModal

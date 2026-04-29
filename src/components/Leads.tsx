@@ -47,8 +47,10 @@ const Leads: React.FC<LeadsProps> = ({
         if (onCampaignChange) onCampaignChange(newCampaignId);
     };
 
-    const isAdmin = profile?.role === 'admin';
-    const myLeads = isAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
+    const isAdmin = profile?.role === 'super_admin' || profile?.role === 'super_agent';
+    const isObserver = profile?.role === 'observer';
+    const canSeeAll = isAdmin || isObserver;
+    const myLeads = canSeeAll ? leads : leads.filter(l => l.agentId === profile?.id);
 
     const filteredLeads = myLeads.filter(l => {
         const matchesSearch =
@@ -71,51 +73,39 @@ const Leads: React.FC<LeadsProps> = ({
                 </div>
             </div>
 
-            <div className="card" style={{ marginBottom: '2rem', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
-                        <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                        <input
-                            type="text"
-                            placeholder="Rechercher un prospect (nom, email, téléphone)..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 2.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', color: 'white' }}
-                        />
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.8rem', minWidth: '220px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0 1rem', alignItems: 'center' }}>
-                        <Target size={18} color="var(--text-muted)" />
-                        <select
-                            value={campaignFilter}
-                            onChange={(e) => handleCampaignFilterChange(e.target.value)}
-                            style={{ flex: 1, padding: '0.75rem', background: 'transparent', border: 'none', color: 'white', outline: 'none' }}
-                        >
-                            <option value="all">Toutes les Campagnes</option>
-                            {(() => {
-                                const displayedOptions = isAdmin
-                                    ? campaigns
-                                    : campaigns.filter(c => leads.some(l => l.campaignId === c.id && l.agentId === profile?.id));
-
-                                return displayedOptions?.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ));
-                            })()}
-                        </select>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.8rem', minWidth: '220px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0 1rem', alignItems: 'center' }}>
-                        <Filter size={18} color="var(--text-muted)" />
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => handleStatusFilterChange(e.target.value)}
-                            style={{ flex: 1, padding: '0.75rem', background: 'transparent', border: 'none', color: 'white', outline: 'none' }}
-                        >
-                            <option value="all">Tous les Statuts</option>
-                            {statuses.map(s => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                            ))}
-                        </select>
-                    </div>
+            <div className="filter-bar">
+                <div className="search-wrapper" style={{ flex: 1, minWidth: '220px' }}>
+                    <Search size={16} className="search-icon" />
+                    <input
+                        type="text"
+                        placeholder="Rechercher un prospect..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={{ paddingLeft: '2.5rem' }}
+                    />
+                </div>
+                <select
+                    value={campaignFilter}
+                    onChange={(e) => handleCampaignFilterChange(e.target.value)}
+                    style={{ minWidth: '180px' }}
+                >
+                    <option value="all">Toutes les Campagnes</option>
+                    {(canSeeAll ? campaigns : campaigns.filter(c => leads.some(l => l.campaignId === c.id && l.agentId === profile?.id))).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </select>
+                <select
+                    value={statusFilter}
+                    onChange={(e) => handleStatusFilterChange(e.target.value)}
+                    style={{ minWidth: '180px' }}
+                >
+                    <option value="all">Tous les Statuts</option>
+                    {statuses.map(s => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                    ))}
+                </select>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                    {filteredLeads.length} résultat{filteredLeads.length !== 1 ? 's' : ''}
                 </div>
             </div>
 
@@ -132,10 +122,10 @@ const Leads: React.FC<LeadsProps> = ({
                     </thead>
                     <tbody>
                         {filteredLeads.map((lead) => (
-                            <tr key={lead.id} onClick={() => setSelectedLead(lead)} style={{
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}>
+                            <tr key={lead.id} onClick={() => setSelectedLead(lead)}
+                            className="hover-row"
+                            style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                        >
                                 <td>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
                                         <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(99, 102, 241, 0.12)', display: 'grid', placeItems: 'center', fontWeight: 700, color: 'var(--primary)' }}>
@@ -174,9 +164,9 @@ const Leads: React.FC<LeadsProps> = ({
                                         {lead.lastInteractionAt ? new Date(lead.lastInteractionAt).toLocaleDateString() : 'Aujourd\'hui'}
                                     </div>
                                 </td>
-                                <td>
-                                    <button className="btn" style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '8px', color: 'var(--text-muted)' }}>
-                                        <MoreHorizontal size={18} />
+                                <td onClick={e => e.stopPropagation()}>
+                                    <button className="btn btn-ghost" style={{ padding: '0.4rem 0.875rem', fontSize: '0.75rem', fontWeight: 700 }}>
+                                        Voir
                                     </button>
                                 </td>
                             </tr>
@@ -194,6 +184,7 @@ const Leads: React.FC<LeadsProps> = ({
                     onUpdate={async () => {
                         if (onRefresh) await onRefresh();
                     }}
+                    profile={profile}
                 />
             )}
         </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MoreHorizontal, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import LeadModal from './LeadModal';
 import { supabase } from '../supabaseClient';
 import type { StudentLead, LeadStatus, Campaign, Agent } from '../types';
@@ -24,10 +24,16 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<any | null>(null);
 
-    const isAdmin = profile?.role === 'admin';
-    const myLeads = isAdmin ? leads : leads.filter(l => l.agentId === profile?.id);
+    const isAdmin = profile?.role === 'super_admin' || profile?.role === 'super_agent';
+    const isObserver = profile?.role === 'observer';
+    const canSeeAll = isAdmin || isObserver;
+    const myLeads = canSeeAll ? leads : leads.filter(l => l.agentId === profile?.id);
 
     const moveLead = async (leadId: string, newStatusId: string) => {
+        if (isObserver) {
+            addToast("Action non autorisée : Les observateurs ne peuvent pas modifier les statuts.", "warning");
+            return;
+        }
         const { error } = await supabase
             .from('leads')
             .update({ status_id: newStatusId })
@@ -39,6 +45,16 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
         }
 
         const newStatus = statuses.find(s => s.id === newStatusId);
+        const lead = leads.find(l => l.id === leadId);
+        const adminSuffix = (profile?.id !== lead?.agentId && isAdmin) ? ` (par Admin: ${profile?.full_name})` : '';
+
+        await supabase.from('lead_interactions').insert({
+            lead_id: leadId,
+            agent_id: profile?.id || lead?.agentId,
+            type: 'status_change',
+            content: `Pipeline : Déplacement vers ${newStatus?.label || newStatusId}` + adminSuffix
+        });
+
         setLeads(prev => prev.map(lead =>
             lead.id === leadId ? { ...lead, statusId: newStatusId, status: newStatus } : lead
         ));
@@ -54,18 +70,28 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
         setIsAddModalOpen(true);
     };
 
+    const PHASES = [
+        { name: 'Qualification', color: '#6366f1', keywords: ['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible', 'whatsapp'] },
+        { name: 'Information', color: '#22d3ee', keywords: ['interesse', 'rappel', 'reflexion', 'reorientation'] },
+        { name: 'Candidature', color: '#f59e0b', keywords: ['rdv_planifie', 'dossier_recu'] },
+        { name: 'Décision', color: '#10b981', keywords: ['admis', 'inscription_attente', 'inscrit'] },
+    ];
+
     return (
-        <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div className="animate-fade">
+            {/* Header Section */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
                 <div>
-                    <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Pipeline Recrutement</h1>
-                    <p style={{ color: 'var(--text-muted)' }}>Vue visuelle du parcours d'inscription EliteCRM.</p>
+                    <h1 style={{ fontSize: '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', color: 'white', marginBottom: '0.5rem' }}>
+                        Pipeline <span style={{ color: 'var(--primary)' }}>Commercial</span>
+                    </h1>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '1rem', fontWeight: 500 }}>
+                        {myLeads.filter(l => l.statusId !== 'perdu').length} opportunités actives à travers {PHASES.length} étapes clés du parcours.
+                    </p>
                 </div>
-                <div className="card" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{isAdmin ? 'Prospects actifs' : 'Mes prospects actifs'}</div>
-                        <div style={{ fontWeight: 700, fontSize: '1.125rem' }}>{myLeads.filter(l => l.statusId !== 'perdu').length}</div>
-                    </div>
+                <div className="card glassmorphism" style={{ padding: '0.75rem 1.25rem', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)', boxShadow: '0 0 10px var(--success)' }} />
+                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'white' }}>Vue en temps réel</span>
                 </div>
             </div>
 
@@ -82,128 +108,182 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 statuses={statuses}
             />
 
+            {/* Kanban Board Container */}
             <div style={{
                 display: 'flex',
                 gap: '1.5rem',
-                minHeight: '75vh',
                 overflowX: 'auto',
-                padding: '0.5rem',
                 paddingBottom: '2rem',
                 alignItems: 'flex-start',
-                scrollbarWidth: 'thin'
+                minHeight: '75vh'
             }}>
-                {[
-                    { name: "QUALIFICATION", keywords: ['nouveau', 'injoignable', 'repondeur', 'faux_numero', 'hors_cible', 'refus_categorique', 'refus_repondre', 'pas_interesse', 'inscrit_ailleurs', 'pas_moyens', 'annee_prochaine', 'pas_disponible', 'whatsapp'] },
-                    { name: "INFORMATION", keywords: ['interesse', 'rappel', 'reflexion', 'reorientation'] },
-                    { name: "CANDIDATURE", keywords: ['rdv_planifie', 'dossier_recu'] },
-                    { name: "DÉCISION", keywords: ['admis', 'inscription_attente', 'inscrit'] }
-                ].map((phase) => {
+                {PHASES.map((phase) => {
                     const phaseStatuses = statuses.filter(s =>
                         phase.keywords.some(k => s.id.toLowerCase().includes(k) || s.label.toLowerCase().includes(k))
                     );
-
                     if (phaseStatuses.length === 0) return null;
 
                     return (
-                        <div key={phase.name} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        <div key={phase.name} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            {/* Phase Label Header */}
                             <div style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 800,
-                                color: 'var(--primary)',
-                                letterSpacing: '0.15em',
-                                background: 'rgba(99, 102, 241, 0.08)',
-                                padding: '8px 16px',
-                                borderRadius: '8px',
-                                width: 'fit-content',
-                                border: '1px solid rgba(99, 102, 241, 0.2)'
+                                fontSize: '0.7rem', fontWeight: 900,
+                                letterSpacing: '0.15em', textTransform: 'uppercase',
+                                color: phase.color,
+                                background: `${phase.color}10`,
+                                border: `1px solid ${phase.color}25`,
+                                padding: '6px 16px', borderRadius: '100px',
+                                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                                alignSelf: 'flex-start',
                             }}>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: phase.color }} />
                                 {phase.name}
                             </div>
-                            <div style={{ display: 'flex', gap: '1.25rem' }}>
-                                {phaseStatuses.map((status) => (
-                                    <div key={status.id} style={{
-                                        flex: '0 0 280px',
-                                        background: 'rgba(255,255,255,0.01)',
-                                        borderRadius: '16px',
-                                        padding: '1rem',
-                                        border: '1px solid var(--border)'
-                                    }}>
-                                        <div style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            marginBottom: '1.25rem',
-                                            padding: '0 0.5rem'
+
+                            {/* Columns within Phase */}
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                {phaseStatuses.map((status) => {
+                                    const columnLeads = myLeads.filter(d => d.statusId === status.id);
+                                    return (
+                                        <div key={status.id} style={{
+                                            width: '280px', flexShrink: 0,
+                                            background: 'rgba(255,255,255,0.01)',
+                                            border: '1px solid var(--border)',
+                                            borderRadius: '24px',
+                                            display: 'flex', flexDirection: 'column',
+                                            maxHeight: '70vh',
+                                            transition: 'border-color 0.2s',
                                         }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: status.color }}></div>
-                                                <h3 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{status.label}</h3>
-                                            </div>
-                                            <span style={{ fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255, 255, 255, 0.05)', padding: '2px 8px', borderRadius: '6px', color: 'var(--text-muted)' }}>
-                                                {myLeads.filter(d => d.statusId === status.id).length}
-                                            </span>
-                                        </div>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-                                            {myLeads.filter(d => d.statusId === status.id).map((lead) => (
-                                                <div key={lead.id} className="card" style={{
-                                                    padding: '1rem',
-                                                    transition: 'all 0.2s ease',
-                                                    borderTop: `2px solid ${status.color}`,
-                                                    background: 'var(--bg-card)'
-                                                }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                                                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>{lead.country}</span>
-                                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                            <select
-                                                                value={lead.statusId}
-                                                                onChange={(e) => moveLead(lead.id, e.target.value)}
-                                                                style={{
-                                                                    background: 'transparent',
-                                                                    border: 'none',
-                                                                    color: 'var(--text-muted)',
-                                                                    fontSize: '0.7rem',
-                                                                    cursor: 'pointer',
-                                                                    outline: 'none'
-                                                                }}
-                                                            >
-                                                                {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                                                            </select>
-                                                            <MoreHorizontal size={14} color="var(--text-muted)" />
-                                                        </div>
-                                                    </div>
-
-                                                    <h4 style={{ fontSize: '0.9375rem', marginBottom: '0.25rem', fontWeight: 600 }}>{lead.firstName} {lead.lastName}</h4>
-                                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>{lead.fieldOfInterest}</p>
-
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
-                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                                            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>{lead.phone}</div>
-                                                        </div>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lead.score} pts</span>
-                                                            <ArrowRight size={12} color="var(--text-muted)" />
-                                                        </div>
-                                                    </div>
+                                            {/* Column Header */}
+                                            <div style={{
+                                                padding: '1.25rem',
+                                                borderBottom: '1px solid var(--border)',
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                background: 'rgba(255,255,255,0.01)'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: status.color, boxShadow: `0 0 8px ${status.color}80` }} />
+                                                    <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'white', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                                                        {status.label}
+                                                    </span>
                                                 </div>
-                                            ))}
-                                            <button
-                                                onClick={() => openModalForStatus(status.id)}
-                                                className="btn-add-lead-ghost"
-                                                style={{
-                                                    background: 'rgba(255,255,255,0.02)',
-                                                    border: '1px dashed var(--border)',
-                                                    borderRadius: '12px',
-                                                    padding: '0.75rem',
-                                                    color: 'var(--text-muted)',
-                                                    fontSize: '0.8125rem',
-                                                    cursor: 'pointer'
+                                                <div style={{
+                                                    fontSize: '0.75rem', fontWeight: 800,
+                                                    background: 'var(--border)',
+                                                    padding: '2px 8px', borderRadius: '8px',
+                                                    color: 'var(--text-muted)'
                                                 }}>
-                                                + Ajouter
-                                            </button>
+                                                    {columnLeads.length}
+                                                </div>
+                                            </div>
+
+                                            {/* Cards Scrollable Area */}
+                                            <div style={{
+                                                flex: 1, overflowY: 'auto',
+                                                padding: '0.75rem',
+                                                display: 'flex', flexDirection: 'column', gap: '0.75rem'
+                                            }}>
+                                                {columnLeads.map((lead) => (
+                                                    <div key={lead.id}
+                                                        className="card"
+                                                        style={{
+                                                            padding: '1.25rem',
+                                                            cursor: 'pointer',
+                                                            border: '1px solid var(--border)',
+                                                            background: 'rgba(255,255,255,0.02)',
+                                                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                        }}
+                                                        onMouseEnter={e => {
+                                                            e.currentTarget.style.borderColor = status.color;
+                                                            e.currentTarget.style.transform = 'translateY(-3px)';
+                                                            e.currentTarget.style.boxShadow = `0 10px 20px -10px ${status.color}40`;
+                                                            e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                                                        }}
+                                                        onMouseLeave={e => {
+                                                            e.currentTarget.style.borderColor = 'var(--border)';
+                                                            e.currentTarget.style.transform = 'translateY(0)';
+                                                            e.currentTarget.style.boxShadow = 'none';
+                                                            e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                                                        }}
+                                                    >
+                                                        {/* Lead Avatar & Name */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
+                                                            <div style={{
+                                                                width: '32px', height: '32px', borderRadius: '10px',
+                                                                background: `linear-gradient(135deg, ${status.color}20, ${status.color}40)`,
+                                                                display: 'grid', placeItems: 'center',
+                                                                fontSize: '0.75rem', fontWeight: 800, color: status.color,
+                                                                border: `1px solid ${status.color}30`
+                                                            }}>
+                                                                {lead.firstName[0]}{lead.lastName[0]}
+                                                            </div>
+                                                            <div style={{ flex: 1, overflow: 'hidden' }}>
+                                                                <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {lead.firstName} {lead.lastName}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Details Grid */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '1rem' }}>
+                                                            {lead.fieldOfInterest && (
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--border)' }} />
+                                                                    {lead.fieldOfInterest}
+                                                                </div>
+                                                            )}
+                                                            {lead.phone && (
+                                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                                    {lead.phone}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Move Action */}
+                                                        <select
+                                                            value={lead.statusId}
+                                                            onChange={(e) => { e.stopPropagation(); moveLead(lead.id, e.target.value); }}
+                                                            onClick={e => e.stopPropagation()}
+                                                            className="input"
+                                                            style={{
+                                                                width: '100%',
+                                                                fontSize: '0.7rem',
+                                                                height: '32px',
+                                                                padding: '0 0.5rem',
+                                                                borderRadius: '8px',
+                                                                background: 'rgba(0,0,0,0.2)',
+                                                                fontWeight: 700,
+                                                                border: '1px solid var(--border)'
+                                                            }}
+                                                        >
+                                                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => (
+                                                                <option key={s.id} value={s.id}>{s.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                ))}
+
+                                                {/* Add Quick Lead */}
+                                                <button
+                                                    onClick={() => openModalForStatus(status.id)}
+                                                    className="btn btn-ghost"
+                                                    style={{
+                                                        width: '100%',
+                                                        border: '1px dashed var(--border)',
+                                                        borderRadius: '12px',
+                                                        padding: '0.75rem',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 700,
+                                                        color: 'var(--text-muted)',
+                                                        marginTop: '0.25rem'
+                                                    }}
+                                                >
+                                                    + Nouveau Prospect
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     );
@@ -217,6 +297,8 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 onUpdate={(leadId, updates) => {
                     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updates } : l));
                 }}
+                profile={profile}
+                statuses={statuses}
             />
         </div>
     );

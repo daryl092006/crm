@@ -49,6 +49,8 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('all')
 
 
+  const [isRecovering, setIsRecovering] = useState(false);
+
   useEffect(() => {
     // Safety timeout: stop loading after 6 seconds even if something hangs
     const timeout = setTimeout(() => {
@@ -60,7 +62,10 @@ function App() {
 
     // --- AUTH STATE LISTENER ---
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      console.log("Auth event:", event);
+      console.log("Auth event in App:", event);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovering(true);
+      }
       if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
         fetchData();
       }
@@ -73,22 +78,22 @@ function App() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'leads' },
-        () => fetchData()
+        () => fetchData(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'campaigns' },
-        () => fetchData()
+        () => fetchData(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'profiles' },
-        () => fetchData()
+        () => fetchData(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'lead_statuses' },
-        () => fetchData()
+        () => fetchData(true)
       )
       .subscribe()
 
@@ -100,9 +105,9 @@ function App() {
   }, [])
 
 
-  const fetchData = async () => {
-    setLoading(true)
-    console.log("--- Fetching CRM Data (Direct Access) ---");
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
+    console.log(`--- Fetching CRM Data (${silent ? 'Silent' : 'Full'}) ---`);
     try {
       // 1. Get Session
       const { data: { session } } = await supabase.auth.getSession();
@@ -163,6 +168,7 @@ function App() {
       // 4. Map Leads & Interactions
       if (leadsData) {
         setLeads(leadsData.map((l: any) => ({
+          ...l, // On garde toutes les colonnes personnalisées (Hondorateur, Profession, etc.)
           id: l.id,
           organizationId: l.organization_id,
           campaignId: l.campaign_id,
@@ -176,7 +182,6 @@ function App() {
           city: l.city,
           fieldOfInterest: l.field_of_interest,
           level: l.study_level,
-          score: l.score || 0,
           notes: l.notes,
           metadata: l.metadata,
           lastInteractionAt: l.last_interaction_at,
@@ -202,159 +207,128 @@ function App() {
         })));
       }
 
-      // 5. Harmonize Statuses (STRICT ENFORCEMENT)
-      const requiredStatuses = [
-        { id: 'nouveau', label: 'Nouveau (Non Contacté)', color: '#6366f1', sort_order: 1 },
-        { id: 'interesse', label: 'Intéressé', color: '#8b5cf6', sort_order: 2 },
-        { id: 'rappel', label: 'Rappel ou en cours', color: '#f59e0b', sort_order: 3 },
-        { id: 'rdv_planifie', label: 'Rendez-vous planifié.', color: '#6366f1', sort_order: 4 },
-        { id: 'reflexion', label: 'Réflexion et nous faire un retour', color: '#3b82f6', sort_order: 5 },
-        { id: 'dossier_recu', label: 'Dossier reçu', color: '#06b6d4', sort_order: 6 },
-        { id: 'admis', label: 'Admis', color: '#a855f7', sort_order: 7 },
-        { id: 'inscription_attente', label: 'Inscription en attente', color: '#ec4899', sort_order: 8 },
-        { id: 'inscrit', label: 'Inscrit', color: '#22c55e', sort_order: 9 },
-        { id: 'reorientation', label: 'Réorientation', color: '#10b981', sort_order: 10 },
-        { id: 'pas_interesse', label: 'Pas intéressé', color: '#94a3b8', sort_order: 11 },
-        { id: 'refus_categorique', label: 'Refus catégorique', color: '#ef4444', sort_order: 12 },
-        { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', color: '#44403c', sort_order: 13 },
-        { id: 'pas_moyens', label: 'Pas les moyens', color: '#44403c', sort_order: 14 },
-        { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', color: '#44403c', sort_order: 15 },
-        { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', color: '#44403c', sort_order: 16 },
-        { id: 'hors_cible', label: 'Hors cible', color: '#44403c', sort_order: 17 },
-        { id: 'refus_repondre', label: 'Refus de répondre', color: '#44403c', sort_order: 18 },
-        { id: 'injoignable', label: 'Injoignable/ Ne répond pas', color: '#64748b', sort_order: 19 },
-        { id: 'repondeur', label: 'Répondeur', color: '#64748b', sort_order: 20 },
-        { id: 'faux_numero', label: 'Faux Numéro', color: '#1c1917', sort_order: 21 },
-        { id: 'whatsapp_indisponible', label: 'Numéro non disponible sur WhatsApp.', color: '#94a3b8', sort_order: 22 }
-      ];
-
-      const allowedIds = requiredStatuses.map(rs => rs.id);
-
-      // Delete any status in DB that is NOT in our required list
-      const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
-      if (toDelete.length > 0) {
-        console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
-        await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
-
-        // ROADMAP REPAIR: Move all leads with "illegal" statuses back to 'nouveau'
-        // This fixes why the user was still seeing old labels
-        await supabase.from('leads')
-          .update({ status_id: 'nouveau' })
-          .not('status_id', 'in', `(${allowedIds.join(',')})`);
-
-        console.log("Database synchronized: legacy statuses migrated to 'nouveau'");
-      }
-
-      const existingIds = (statusesData || []).map(s => s.id);
-      const toCreate = requiredStatuses.filter(rs => !existingIds.includes(rs.id));
-
-      if (toCreate.length > 0) {
-        await supabase.from('lead_statuses').insert(toCreate.map(s => ({
-          id: s.id,
-          label: s.label,
-          color: s.color,
-          sort_order: s.sort_order,
-          organization_id: '00000000-0000-0000-0000-000000000000'
+      // 5. Map Campaigns
+      if (campaignsData) {
+        setCampaigns(campaignsData.map((c: any) => ({
+          id: c.id,
+          organizationId: c.organization_id,
+          name: c.name,
+          source: c.source,
+          column_mappings: c.column_mappings,
+          startDate: c.start_date,
+          endDate: c.end_date,
+          isActive: c.is_active ?? true, // Ajout de la propriété manquante
+          status: c.status
         })));
       }
 
-      // Always re-fetch to ensure perfect sync
-      const { data: finalStatuses } = await supabase.from('lead_statuses').select('*').order('sort_order');
-      if (finalStatuses) {
-        setStatuses(finalStatuses
-          .filter(s => allowedIds.includes(s.id))
-          .map(s => ({
-            id: s.id,
-            label: s.label,
-            color: s.color,
-            isDefault: s.is_default,
-            sortOrder: s.sort_order
-          }))
-        );
+      // 6. Map Agents
+      if (agentsData) {
+        setAgents(agentsData.filter((a: any) => 
+          a.id !== '00000000-0000-0000-0000-000000000000' && 
+          a.role !== 'super_admin' && 
+          a.role !== 'admin' &&
+          a.role !== 'observer'
+        ).map((a: any): Agent => {
+          const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
+          const assignedCount = agentLeads.length;
+
+          // CALCUL HARMONISÉ
+          const contactedCount = agentLeads.filter(l => {
+            const sid = (l.status_id || '').toLowerCase();
+            return sid !== 'nouveau' && sid !== '';
+          }).length;
+
+          const pasReponduCount = agentLeads.filter(l => {
+            const sid = (l.status_id || '').toLowerCase();
+            return sid === 'injoignable' || sid === 'repondeur';
+          }).length;
+
+          const reachedCount = contactedCount - pasReponduCount;
+
+          const inscribedCount = agentLeads.filter((l: any) =>
+            ['admis', 'inscription_attente', 'inscrit'].some(k => (l.status_id || '').toLowerCase().includes(k))
+          ).length;
+
+          const rate = reachedCount > 0 ? Math.round((inscribedCount / reachedCount) * 100) : 0;
+
+          const responseTimes = agentLeads.map((l: any) => {
+            if (!l.lead_interactions || l.lead_interactions.length === 0) return null;
+            const interactions = l.lead_interactions.filter((i: any) => ['call', 'whatsapp', 'sms'].includes(i.type));
+            if (interactions.length === 0) return null;
+
+            const firstInteraction = interactions.reduce((prev: any, curr: any) => {
+              return new Date(curr.created_at) < new Date(prev.created_at) ? curr : prev;
+            });
+
+            const diffMs = new Date(firstInteraction.created_at).getTime() - new Date(l.created_at).getTime();
+            return diffMs > 0 ? diffMs : null;
+          });
+          const validTimes = responseTimes.filter((t): t is number => t !== null);
+
+          const avgResponseTimeHours = validTimes.length > 0
+            ? (validTimes.reduce((a, b) => a + b, 0) / validTimes.length) / (1000 * 60 * 60)
+            : 0;
+
+          return {
+            id: a.id,
+            organizationId: a.organization_id,
+            name: a.full_name || a.email?.split('@')[0] || 'Agent',
+            email: a.email || '',
+            role: a.role,
+            avatarUrl: a.avatar_url,
+            leadsAssigned: assignedCount,
+            overdueTasksCount: 0, // Initialisé à 0
+            conversionRate: rate,
+            avgResponseTime: Number(avgResponseTimeHours.toFixed(1)),
+            isActive: a.is_active !== false,
+            capacityWeight: a.capacity_weight || 1,
+            capacity_weight: a.capacity_weight || 1,
+            mustChangePassword: a.must_change_password || false
+          };
+        }));
       }
 
-      if (campaignsData) setCampaigns(campaignsData.map((c: any) => ({
-        id: c.id,
-        organizationId: c.organization_id,
-        name: c.name,
-        source: c.source,
-        budget: c.budget, // Correction de l'ancienne erreur (c.budget instead of c.budget)
-        startDate: c.start_date,
-        endDate: c.end_date,
-        isActive: c.is_active,
-        column_mappings: c.column_mappings
-      })));
-
-      if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000' && a.role !== 'admin').map((a: any): Agent => {
-        const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
-        const assignedCount = agentLeads.length;
-
-        // CALCUL HARMONISÉ (Identique au AgentStatsModal)
-        const contactedCount = agentLeads.filter(l => {
-          const sid = (l.status_id || '').toLowerCase();
-          return sid !== 'nouveau' && sid !== '';
-        }).length;
-
-        const pasReponduCount = agentLeads.filter(l => {
-          const sid = (l.status_id || '').toLowerCase();
-          return sid === 'injoignable' || sid === 'repondeur';
-        }).length;
-
-        const reachedCount = contactedCount - pasReponduCount;
-
-        const inscribedCount = agentLeads.filter((l: any) =>
-          ['admis', 'inscription_attente', 'inscrit'].some(k => (l.status_id || '').toLowerCase().includes(k))
-        ).length;
-
-        const rate = reachedCount > 0 ? Math.round((inscribedCount / reachedCount) * 100) : 0;
-
-        const responseTimes = agentLeads.map((l: any) => {
-          if (!l.lead_interactions || l.lead_interactions.length === 0) return null;
-          // Filter for real contact interactions, not just notes if possible, but let's take any first interaction for now
-          const interactions = l.lead_interactions.filter((i: any) => ['call', 'whatsapp', 'sms'].includes(i.type));
-          if (interactions.length === 0) return null;
-
-          const firstInteraction = interactions.reduce((prev: any, curr: any) => {
-            return new Date(curr.created_at) < new Date(prev.created_at) ? curr : prev;
-          });
-
-          const diffMs = new Date(firstInteraction.created_at).getTime() - new Date(l.created_at).getTime();
-          return diffMs > 0 ? diffMs : null;
-        });
-        const validTimes = responseTimes.filter((t): t is number => t !== null);
-
-        const avgResponseTimeHours = validTimes.length > 0
-          ? (validTimes.reduce((a, b) => a + b, 0) / validTimes.length) / (1000 * 60 * 60)
-          : 0;
-        return {
-          id: a.id,
-          organizationId: a.organization_id,
-          name: a.full_name || a.email?.split('@')[0] || 'Agent',
-          email: a.email || '',
-          role: a.role,
-          capacityWeight: a.capacity_weight || 1,
-          leadsAssigned: assignedCount,
-          overdueTasksCount: 0,
-          conversionRate: rate,
-          avgResponseTime: Number(avgResponseTimeHours.toFixed(1)),
-          isActive: a.is_active !== false,
-          mustChangePassword: a.must_change_password || false
-        };
-      }))
-
-      console.log("Fetch success: Leads:", leadsData?.length, "Campaigns:", campaignsData?.length, "Agents:", agentsData?.length);
     } catch (err) {
       console.error("Fetch error:", err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
+  // --- HARMONIZATION EFFECT ---
+  // Runs once on startup for admins to cleanup legacy data
+  useEffect(() => {
+    const harmonize = async () => {
+        if (!profile || profile.role !== 'super_admin') return;
+        
+        const requiredStatuses = [
+            { id: 'nouveau' }, { id: 'interesse' }, { id: 'rappel' }, { id: 'rdv_planifie' }, 
+            { id: 'reflexion' }, { id: 'dossier_recu' }, { id: 'admis' }, { id: 'inscription_attente' }, 
+            { id: 'inscrit' }, { id: 'reorientation' }, { id: 'pas_interesse' }, { id: 'refus_categorique' }, 
+            { id: 'inscrit_ailleurs' }, { id: 'pas_moyens' }, { id: 'annee_prochaine' }, 
+            { id: 'pas_disponible' }, { id: 'hors_cible' }, { id: 'refus_repondre' }, 
+            { id: 'injoignable' }, { id: 'repondeur' }, { id: 'faux_numero' }, { id: 'whatsapp_indisponible' }
+        ];
+        
+        const allowedIds = requiredStatuses.map(rs => rs.id);
+        const { data: currentStatuses } = await supabase.from('lead_statuses').select('id');
+        const toDelete = (currentStatuses || []).filter(s => !allowedIds.includes(s.id));
+        
+        if (toDelete.length > 0) {
+            await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
+            await supabase.from('leads').update({ status_id: 'nouveau' }).not('status_id', 'in', `(${allowedIds.join(',')})`);
+            console.log("Database Harmonized.");
+            fetchData(true);
+        }
+    };
+    harmonize();
+  }, [profile?.id]);
 
   const handleUpdateLeads = async (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
     if (typeof newLeads === 'function') setLeads(newLeads(leads));
     else setLeads(newLeads);
-  }
+  };
 
   if (token) {
     return (
@@ -423,7 +397,7 @@ function App() {
         </div>
 
         <main className="main-content">
-          {activeTab === 'dashboard' && (
+          {!isRecovering && activeTab === 'dashboard' && (
             <Dashboard
               leads={leads}
               campaigns={campaigns}
@@ -435,7 +409,7 @@ function App() {
               profile={profile}
             />
           )}
-          {activeTab === 'pipeline' && (
+          {!isRecovering && activeTab === 'pipeline' && (
             <Pipeline
               profile={profile}
               leads={leads}
@@ -445,7 +419,7 @@ function App() {
               statuses={statuses}
             />
           )}
-          {activeTab === 'leads' && (
+          {!isRecovering && activeTab === 'leads' && (
             <Leads
               leads={leads}
               statuses={statuses}
@@ -454,14 +428,14 @@ function App() {
               profile={profile}
             />
           )}
-          {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
-          {activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
+          {!isRecovering && activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
+          {!isRecovering && activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
 
 
-          {activeTab === 'settings' && <Settings />}
-          {activeTab === 'profile' && <ProfileComponent profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
+          {!isRecovering && activeTab === 'settings' && <Settings />}
+          {!isRecovering && activeTab === 'profile' && <ProfileComponent profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
 
-          {!profile && <Login />}
+          {(!profile || isRecovering) && <Login />}
 
         </main>
       </PopupProvider>

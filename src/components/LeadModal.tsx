@@ -112,7 +112,6 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     city: updated.city,
                     fieldOfInterest: updated.field_of_interest,
                     level: updated.study_level,
-                    score: updated.score || 0,
                     lastInteractionAt: updated.last_interaction_at,
                     createdAt: updated.created_at
                 });
@@ -165,7 +164,6 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 city: data.city,
                 fieldOfInterest: data.field_of_interest,
                 level: data.study_level,
-                score: data.score || 0,
                 lastInteractionAt: data.last_interaction_at,
                 createdAt: data.created_at
             });

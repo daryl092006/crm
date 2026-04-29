@@ -20,6 +20,14 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
 
     React.useEffect(() => {
+        // 1. Écouter les événements d'authentification (ex: récupération de mot de passe)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setMustChangePassword(true);
+            }
+        });
+
+        // 2. Vérification initiale
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) {
                 setHasSession(true);
@@ -35,6 +43,8 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                 setHasSession(false);
             }
         });
+
+        return () => subscription.unsubscribe();
     }, [mode, step]);
 
 
@@ -189,7 +199,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                 const { data: authData, error: authError } = await supabase.auth.signUp({
                     email,
                     password,
-                    options: { data: { full_name: fullName, role: 'admin' } }
+                    options: { data: { full_name: fullName, role: 'super_admin' } }
                 });
 
                 if (authError) {
@@ -228,7 +238,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                 id: userId,
                 organization_id: orgId,
                 full_name: fullName,
-                role: 'admin',
+                role: 'super_admin',
                 email: email
             });
 

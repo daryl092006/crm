@@ -7,7 +7,7 @@ import { usePopup } from './Popup';
 interface Invitation {
     id: string;
     email: string;
-    role: 'admin' | 'agent';
+    role: 'super_admin' | 'super_agent' | 'agent' | 'observer';
     status: 'pending' | 'accepted' | 'expired';
     created_at: string;
 }

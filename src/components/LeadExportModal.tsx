@@ -18,7 +18,6 @@ const AVAILABLE_COLUMNS: Column[] = [
     { id: 'level', label: 'Niveau' },
     { id: 'statusId', label: 'Statut' },
     { id: 'notes', label: 'Notes' },
-    { id: 'score', label: 'Score' },
     { id: 'createdAt', label: 'Date Ajout' },
 ];
 

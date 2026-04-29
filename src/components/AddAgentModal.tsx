@@ -5,12 +5,13 @@ import { X, User, Mail } from 'lucide-react';
 interface AddAgentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAdd: (fullName: string, email: string) => Promise<void>;
+    onAdd: (fullName: string, email: string, role: string) => Promise<void>;
 }
 
 const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd }) => {
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
+    const [role, setRole] = useState<'super_admin' | 'super_agent' | 'agent' | 'observer'>('agent');
     const [loading, setLoading] = useState(false);
 
     if (!isOpen) return null;
@@ -19,9 +20,10 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd })
         e.preventDefault();
         setLoading(true);
         try {
-            await onAdd(fullName, email);
+            await onAdd(fullName, email, role);
             setFullName('');
             setEmail('');
+            setRole('agent');
             onClose();
         } catch (error) {
             console.error(error);
@@ -105,6 +107,29 @@ const AddAgentModal: React.FC<AddAgentModalProps> = ({ isOpen, onClose, onAdd })
                                 }}
                             />
                         </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500 }}>
+                            Rôle de l'utilisateur
+                        </label>
+                        <select
+                            value={role}
+                            onChange={(e) => setRole(e.target.value as any)}
+                            style={{
+                                width: '100%',
+                                padding: '0.75rem 1rem',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '10px',
+                                color: 'white'
+                            }}
+                        >
+                            <option value="agent">Agent (Commercial)</option>
+                            <option value="super_agent">Super Agent (Agent + Admin)</option>
+                            <option value="super_admin">Super Administrateur</option>
+                            <option value="observer">Observateur (Lecture seule)</option>
+                        </select>
                     </div>
 
                     <button

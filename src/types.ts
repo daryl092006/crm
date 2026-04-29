@@ -55,7 +55,7 @@ export interface StudentLead {
     fieldOfInterest: StudyField;
     level: string;
 
-    score: number;
+    score?: number; // deprecated, kept for DB compat
     notes?: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     metadata?: Record<string, any>;
@@ -87,7 +87,7 @@ export interface Agent {
     organizationId: string;
     name: string;
     email: string;
-    role: 'admin' | 'agent';
+    role: 'super_admin' | 'super_agent' | 'agent' | 'observer';
     capacityWeight: number;
     avatarUrl?: string;
     isActive: boolean;
@@ -125,7 +125,7 @@ export interface Profile {
     organization_id: string;
     organization_name?: string;
     full_name: string;
-    role: 'admin' | 'agent';
+    role: 'super_admin' | 'super_agent' | 'agent' | 'observer';
     email: string;
     must_change_password?: boolean;
     created_at?: string;
