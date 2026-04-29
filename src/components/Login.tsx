@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { LogIn, Building2, ShieldCheck } from 'lucide-react';
+import { LogIn, Building2, ShieldCheck, Lock } from 'lucide-react';
 import { useToast } from './Toast';
 
 export const Login: React.FC = () => {
@@ -11,6 +11,22 @@ export const Login: React.FC = () => {
     const [password, setPassword] = useState('');
     const [orgName, setOrgName] = useState('');
     const [isForgotPassword, setIsForgotPassword] = useState(false);
+    const [isRecovering, setIsRecovering] = useState(false);
+
+    useEffect(() => {
+        // Détecter directement dans l'URL si on vient d'un email de reset
+        if (window.location.hash && window.location.hash.includes('type=recovery')) {
+            setIsRecovering(true);
+        }
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setIsRecovering(true);
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     const translateError = (msg: string) => {
         if (!msg) return 'Une erreur inconnue est survenue.';
@@ -29,7 +45,14 @@ export const Login: React.FC = () => {
         setLoading(true);
 
         try {
-            if (isForgotPassword) {
+            if (isRecovering) {
+                const { error } = await supabase.auth.updateUser({ password });
+                if (error) throw error;
+                addToast('Mot de passe mis à jour avec succès !', 'success');
+                setIsRecovering(false);
+                window.location.hash = ''; // Nettoyer l'URL
+                window.location.reload(); // Recharger pour appliquer la session
+            } else if (isForgotPassword) {
                 const { error } = await supabase.auth.resetPasswordForEmail(email, {
                     redirectTo: `${window.location.origin}/`,
                 });
@@ -85,22 +108,22 @@ export const Login: React.FC = () => {
                         width: '64px', height: '64px', background: 'var(--primary)',
                         borderRadius: '16px', display: 'grid', placeItems: 'center', margin: '0 auto 1rem'
                     }}>
-                        <ShieldCheck size={32} color="white" />
+                        {isRecovering ? <Lock size={32} color="white" /> : <ShieldCheck size={32} color="white" />}
                     </div>
                     <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>
-                        {isForgotPassword ? 'Mot de passe oublié' : (isRegister ? 'Créer mon CRM' : 'Accès ESCEN CRM')}
+                        {isRecovering ? 'Nouveau mot de passe' : (isForgotPassword ? 'Mot de passe oublié' : (isRegister ? 'Créer mon CRM' : 'Accès ESCEN CRM'))}
                     </h2>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                        {isForgotPassword ? 'Entrez votre email pour réinitialiser.' : (isRegister ? 'Configurez votre espace entreprise en 2 minutes.' : 'Connectez-vous pour gérer vos candidats.')}
+                        {isRecovering ? 'Veuillez saisir votre nouveau mot de passe.' : (isForgotPassword ? 'Entrez votre email pour réinitialiser.' : (isRegister ? 'Configurez votre espace entreprise en 2 minutes.' : 'Connectez-vous pour gérer vos candidats.'))}
                     </p>
                 </div>
 
                 <form
-                    key={isRegister ? 'reg' : 'log'}
+                    key={isRecovering ? 'rec' : (isRegister ? 'reg' : 'log')}
                     onSubmit={handleAuth}
                     style={{ display: 'grid', gap: '1rem' }}
                 >
-                    {!isForgotPassword && isRegister && (
+                    {!isRecovering && !isForgotPassword && isRegister && (
                         <div>
                             <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>NOM DE L'ENTREPRISE</label>
                             <div style={{ position: 'relative' }}>
@@ -116,20 +139,24 @@ export const Login: React.FC = () => {
                         </div>
                     )}
 
-                    <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>EMAIL PROFESSIONNEL</label>
-                        <input
-                            name="email"
-                            id="email"
-                            type="email" required placeholder=""
-                            value={email} onChange={e => setEmail(e.target.value)}
-                            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
-                        />
-                    </div>
-
-                    {!isForgotPassword && (
+                    {!isRecovering && (
                         <div>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>MOT DE PASSE</label>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>EMAIL PROFESSIONNEL</label>
+                            <input
+                                name="email"
+                                id="email"
+                                type="email" required placeholder=""
+                                value={email} onChange={e => setEmail(e.target.value)}
+                                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
+                            />
+                        </div>
+                    )}
+
+                    {(!isForgotPassword || isRecovering) && (
+                        <div>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>
+                                {isRecovering ? 'NOUVEAU MOT DE PASSE' : 'MOT DE PASSE'}
+                            </label>
                             <input
                                 name="password"
                                 id="password"
@@ -140,7 +167,7 @@ export const Login: React.FC = () => {
                         </div>
                     )}
 
-                    {!isForgotPassword && !isRegister && (
+                    {!isRecovering && !isForgotPassword && !isRegister && (
                         <div style={{ textAlign: 'right', marginTop: '-0.5rem' }}>
                             <button
                                 type="button"
@@ -155,25 +182,27 @@ export const Login: React.FC = () => {
                     )}
 
                     <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', height: '45px', justifyContent: 'center' }}>
-                        {loading ? 'Traitement...' : isForgotPassword ? 'Envoyer le lien' : (isRegister ? 'Créer mon compte' : 'Me connecter')}
-                        {!loading && !isForgotPassword && (isRegister ? <Building2 size={18} /> : <LogIn size={18} />)}
+                        {loading ? 'Traitement...' : isRecovering ? 'Mettre à jour le mot de passe' : (isForgotPassword ? 'Envoyer le lien' : (isRegister ? 'Créer mon compte' : 'Me connecter'))}
+                        {!loading && !isForgotPassword && !isRecovering && (isRegister ? <Building2 size={18} /> : <LogIn size={18} />)}
                     </button>
                 </form>
 
-                <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-                    <button
-                        onClick={() => {
-                            if (isForgotPassword) {
-                                setIsForgotPassword(false);
-                            } else {
-                                setIsRegister(!isRegister);
-                            }
-                        }}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
-                    >
-                        {isForgotPassword ? 'Retour à la connexion' : (isRegister ? 'Déjà un compte ? Connectez-vous' : "Pas encore de compte ? Créer l'espace Entreprise")}
-                    </button>
-                </div>
+                {!isRecovering && (
+                    <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+                        <button
+                            onClick={() => {
+                                if (isForgotPassword) {
+                                    setIsForgotPassword(false);
+                                } else {
+                                    setIsRegister(!isRegister);
+                                }
+                            }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
+                        >
+                            {isForgotPassword ? 'Retour à la connexion' : (isRegister ? 'Déjà un compte ? Connectez-vous' : "Pas encore de compte ? Créer l'espace Entreprise")}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
