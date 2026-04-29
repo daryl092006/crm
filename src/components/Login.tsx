@@ -14,12 +14,22 @@ export const Login: React.FC = () => {
     const [isRecovering, setIsRecovering] = useState(false);
 
     useEffect(() => {
-        // Détecter directement dans l'URL si on vient d'un email de reset
-        if (window.location.hash && window.location.hash.includes('type=recovery')) {
-            setIsRecovering(true);
+        // Détection ultra-robuste dans toute l'URL (hash et query params)
+        const currentUrl = window.location.href;
+        
+        if (currentUrl.includes('type=recovery') || currentUrl.includes('error_description') || currentUrl.includes('code=')) {
+            // Si l'URL contient un code (PKCE) ou 'type=recovery', c'est forcément une récupération ou une connexion par lien
+            // Dans le cadre du reset password, on force isRecovering
+            console.log("Recovery or Auth Code detected in URL!");
+            
+            // Si ce n'est pas une simple erreur, on active le mode récupération
+            if (!currentUrl.includes('error_description')) {
+                setIsRecovering(true);
+            }
         }
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log("Auth Event in Login:", event, session);
             if (event === 'PASSWORD_RECOVERY') {
                 setIsRecovering(true);
             }
