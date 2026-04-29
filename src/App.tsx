@@ -57,6 +57,12 @@ function App() {
       if (loading) setLoading(false);
     }, 6000);
 
+    // --- CHECK RECOVERY IN URL ---
+    if (window.location.hash && window.location.hash.includes('type=recovery')) {
+      console.log("App: Recovery detected in URL hash");
+      setIsRecovering(true);
+    }
+
     // Chargement immédiat des données
     fetchData();
 

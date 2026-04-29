@@ -22,30 +22,31 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
     React.useEffect(() => {
         // 1. Écouter les événements d'authentification (ex: récupération de mot de passe)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+            console.log("Auth event changed:", event);
             if (event === 'PASSWORD_RECOVERY') {
                 setMustChangePassword(true);
             }
         });
 
-        // 2. Vérification initiale
+        // 2. Vérification directe de l'URL (Sécurité supplémentaire pour les liens de reset)
+        if (window.location.hash && window.location.hash.includes('type=recovery')) {
+            console.log("Recovery link detected in URL hash");
+            setMustChangePassword(true);
+        }
+
+        // 3. Vérification initiale de session
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.user) {
                 setHasSession(true);
-                // Only auto-fill if we are actually in registration flow
-                if (mode === 'register') {
-                    setEmail(session.user.email || '');
-                }
-                // If we are in onboarding mode (logged in but no profile), skip to step 2
-                if (mode === 'register' && step === 1) {
-                    setStep(2);
-                }
+                // Si on est déjà logué via un lien de reset (Supabase le fait parfois auto)
+                // mais qu'on n'a pas encore changé le mdp, on reste sur mustChangePassword
             } else {
                 setHasSession(false);
             }
         });
 
         return () => subscription.unsubscribe();
-    }, [mode, step]);
+    }, []);
 
 
     // State Admin
