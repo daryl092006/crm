@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { LogIn, Building2, ShieldCheck, Lock } from 'lucide-react';
 import { useToast } from './Toast';
 
-export const Login: React.FC = () => {
+export const Login: React.FC<{ isRecoveringMode?: boolean }> = ({ isRecoveringMode = false }) => {
     const { addToast } = useToast();
     const [loading, setLoading] = useState(false);
     const [isRegister, setIsRegister] = useState(false);
@@ -11,7 +11,13 @@ export const Login: React.FC = () => {
     const [password, setPassword] = useState('');
     const [orgName, setOrgName] = useState('');
     const [isForgotPassword, setIsForgotPassword] = useState(false);
-    const [isRecovering, setIsRecovering] = useState(false);
+    const [isRecovering, setIsRecovering] = useState(isRecoveringMode);
+
+    useEffect(() => {
+        if (isRecoveringMode) {
+            setIsRecovering(true);
+        }
+    }, [isRecoveringMode]);
 
     useEffect(() => {
         // Détection ultra-robuste dans toute l'URL (hash et query params)

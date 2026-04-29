@@ -441,7 +441,7 @@ function App() {
           {!isRecovering && activeTab === 'settings' && <Settings />}
           {!isRecovering && activeTab === 'profile' && <ProfileComponent profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
 
-          {(!profile || isRecovering) && <Login />}
+          {(!profile || isRecovering) && <Login isRecoveringMode={isRecovering} />}
 
         </main>
       </PopupProvider>
