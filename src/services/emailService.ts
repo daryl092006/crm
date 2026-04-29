@@ -98,10 +98,13 @@ export const sendEmail = async (to: string, templateKey: string, name: string) =
         });
 
         const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Erreur lors de l'envoi");
-        return data;
+        if (!response.ok) {
+            console.warn("Resend API issue (absorbé pour le CRM):", data.message || "Erreur d'envoi");
+            return { success: false };
+        }
+        return { success: true, data };
     } catch (error) {
-        console.error("Email Error:", error);
-        throw error;
+        console.warn("Erreur réseau Email (probablement CORS - absorbée pour ne pas bloquer le CRM):", error);
+        return { success: false };
     }
 };

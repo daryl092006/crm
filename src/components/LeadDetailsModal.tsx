@@ -3,7 +3,6 @@ import { X, Mail, Phone, MapPin, CheckCircle2, Calendar, Video, Map, Info, Messa
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import type { StudentLead, LeadStatus } from '../types';
-import { sendEmail } from '../services/emailService';
 
 interface LeadDetailsModalProps {
     lead: StudentLead;
@@ -85,19 +84,6 @@ const LeadDetailsModal: React.FC<LeadDetailsModalProps> = ({ lead, isOpen, onClo
                 .eq('id', lead.id);
             if (updateError) throw updateError;
 
-            // --- AUTOMATISATION EMAIL ---
-            const lowerStatus = statusId.toLowerCase();
-            if (lowerStatus.includes('injoignable')) {
-                await sendEmail(lead.email, 'injoignable', lead.firstName);
-                addToast("Email de relance (Injoignable) envoyé !", "info");
-            } else if (lowerStatus.includes('repondeur') || lowerStatus.includes('répondeur')) {
-                await sendEmail(lead.email, 'repondeur', lead.firstName);
-                addToast("Email de relance (Répondeur) envoyé !", "info");
-            } else if (lowerStatus.includes('interessé') || lowerStatus.includes('interesse') || lowerStatus.includes('documentation') || lowerStatus.includes('brochure')) {
-                await sendEmail(lead.email, 'documentation', lead.firstName);
-                addToast("Template M365 (Documentation) envoyé !", "success");
-            }
-            // -----------------------------
 
             if ((statusId.toLowerCase().includes('rendez-vous') || statusId.toLowerCase().includes('rappel') || statusId.toLowerCase().includes('cours')) && appointmentDate) {
                 const isAppointment = statusId.toLowerCase().includes('rendez-vous');
