@@ -408,6 +408,29 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                             Se connecter maintenant
                         </button>
                     </div>
+                ) : mustChangePassword ? (
+                    <form onSubmit={handleUpdatePassword} className="auth-step-content animate-fade">
+                        <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
+                            <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'grid', placeItems: 'center' }}>
+                                <Lock size={24} color="var(--primary)" />
+                            </div>
+                        </div>
+                        <h2 className="auth-title">Sécurité Renforcée</h2>
+                        <p className="auth-subtitle">Veuillez définir votre nouveau mot de passe personnel.</p>
+                        <div className="input-group">
+                            <div className="input-wrapper">
+                                <Lock size={18} className="input-icon" />
+                                <input type="password" placeholder="Nouveau mot de passe" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+                            </div>
+                            <div className="input-wrapper">
+                                <CheckCircle2 size={18} className="input-icon" />
+                                <input type="password" placeholder="Confirmer le mot de passe" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+                            </div>
+                        </div>
+                        <button disabled={isLoading} className="btn btn-primary btn-auth">
+                            {isLoading ? <Loader2 className="spin" /> : 'Mettre à jour mon mot de passe'}
+                        </button>
+                    </form>
                 ) : mode === 'login' ? (
                     <form onSubmit={handleLogin} className="auth-step-content">
                         <h2 className="auth-title">Heureux de vous revoir</h2>
@@ -433,29 +456,6 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                         </div>
                         <button disabled={isLoading} className="btn btn-primary btn-auth">
                             {isLoading ? <Loader2 className="spin" /> : 'Se connecter'}
-                        </button>
-                    </form>
-                ) : mustChangePassword ? (
-                    <form onSubmit={handleUpdatePassword} className="auth-step-content animate-fade">
-                        <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
-                            <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', display: 'grid', placeItems: 'center' }}>
-                                <Lock size={24} color="var(--primary)" />
-                            </div>
-                        </div>
-                        <h2 className="auth-title">Sécurité Renforcée</h2>
-                        <p className="auth-subtitle">C''est votre première connexion. Veuillez définir votre mot de passe personnel.</p>
-                        <div className="input-group">
-                            <div className="input-wrapper">
-                                <Lock size={18} className="input-icon" />
-                                <input type="password" placeholder="Nouveau mot de passe" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
-                            </div>
-                            <div className="input-wrapper">
-                                <CheckCircle2 size={18} className="input-icon" />
-                                <input type="password" placeholder="Confirmer le mot de passe" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
-                            </div>
-                        </div>
-                        <button disabled={isLoading} className="btn btn-primary btn-auth">
-                            {isLoading ? <Loader2 className="spin" /> : 'Activer mon compte'}
                         </button>
                     </form>
                 ) : mode === 'forgot-password' ? (
