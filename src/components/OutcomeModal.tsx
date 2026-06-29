@@ -18,105 +18,89 @@ interface OutcomeModalProps {
     onClose: () => void;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onUpdate: (leadId: string, updates: any) => void;
+    profile: import('../types').Profile | null;
+    statuses: import('../types').LeadStatus[];
 }
 
-const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUpdate }) => {
+const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUpdate, profile, statuses }) => {
     const { addToast } = useToast();
 
     if (!isOpen || !lead) return null;
 
     const handleDisposition = async (disposition: DispositionType) => {
         let newStatusId = lead.statusId;
-        let scoreIncrement = 0;
         let dispositionLabel = "";
 
-        // Scoring & Status Logic
+        // Status Logic
         const isCurrentlyPositive = ['interesse', 'rappel', 'rdv_planifie', 'dossier_recu', 'admis', 'inscription_attente', 'inscrit'].includes(lead.statusId);
         
         switch(disposition) {
             case 'intéressé':
                 newStatusId = 'interesse';
-                scoreIncrement = 20;
                 dispositionLabel = "Intéressé";
                 break;
             case 'rappel':
                 newStatusId = 'rappel';
-                scoreIncrement = 5;
                 dispositionLabel = "Rappel ou en cours";
                 break;
             case 'reflexion':
                 newStatusId = 'reflexion';
-                scoreIncrement = 10;
                 dispositionLabel = "Réflexion et nous faire un retour";
                 break;
             case 'rendez_vous_pris':
                 newStatusId = 'rdv_planifie';
-                scoreIncrement = 50;
                 dispositionLabel = "Rendez-vous planifié";
                 break;
             case 'dossier_recu':
                 newStatusId = 'dossier_recu';
-                scoreIncrement = 80;
                 dispositionLabel = "Dossier reçu";
                 break;
             case 'admis':
                 newStatusId = 'admis';
-                scoreIncrement = 120;
                 dispositionLabel = "Admis";
                 break;
             case 'inscription_attente':
                 newStatusId = 'inscription_attente';
-                scoreIncrement = 150;
                 dispositionLabel = "Inscription en attente";
                 break;
             case 'inscrit':
                 newStatusId = 'inscrit';
-                scoreIncrement = 250;
                 dispositionLabel = "Inscrit";
                 break;
             case 'reorientation':
                 newStatusId = 'reorientation';
-                scoreIncrement = 15;
                 dispositionLabel = "Réorientation";
                 break;
             case 'pas_interesse':
                 newStatusId = 'pas_interesse';
-                scoreIncrement = -10;
                 dispositionLabel = "Pas intéressé";
                 break;
             case 'refus_categorique':
                 newStatusId = 'refus_categorique';
-                scoreIncrement = -50;
                 dispositionLabel = "Refus catégorique";
                 break;
             case 'inscrit_ailleurs':
                 newStatusId = 'inscrit_ailleurs';
-                scoreIncrement = -30;
                 dispositionLabel = "Inscrit ailleurs";
                 break;
             case 'pas_moyens':
                 newStatusId = 'pas_moyens';
-                scoreIncrement = -20;
                 dispositionLabel = "Pas les moyens";
                 break;
             case 'annee_prochaine':
                 newStatusId = 'annee_prochaine';
-                scoreIncrement = 5;
-                dispositionLabel = "S’inscrire l’année prochaine";
+                dispositionLabel = "S'inscrire l'année prochaine";
                 break;
             case 'pas_disponible':
                 newStatusId = 'pas_disponible';
-                scoreIncrement = -5;
                 dispositionLabel = "Pas disponible / contrainte de temps";
                 break;
             case 'hors_cible':
                 newStatusId = 'hors_cible';
-                scoreIncrement = -100;
                 dispositionLabel = "Hors cible";
                 break;
             case 'refus_repondre':
                 newStatusId = 'refus_repondre';
-                scoreIncrement = -40;
                 dispositionLabel = "Refus de répondre";
                 break;
             case 'injoignable':
@@ -126,7 +110,6 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
             case 'whatsapp_indisponible':
                 newStatusId = isCurrentlyPositive ? lead.statusId : 'whatsapp_indisponible';
                 dispositionLabel = "Numéro non disponible sur WhatsApp.";
-                scoreIncrement = -5;
                 break;
             case 'repondeur':
                 newStatusId = isCurrentlyPositive ? lead.statusId : 'repondeur';
@@ -134,18 +117,15 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                 break;
             case 'faux_numero':
                 newStatusId = 'faux_numero';
-                scoreIncrement = -200;
                 dispositionLabel = "Faux Numéro";
                 break;
             case 'nouveau':
                 newStatusId = 'nouveau';
-                scoreIncrement = 0;
                 dispositionLabel = "Non Contacté";
                 break;
         }
 
         const isFailedContact = ['injoignable', 'repondeur', 'faux_numero'].includes(disposition);
-        const newScore = Math.max(0, (lead.score || 0) + scoreIncrement);
         const newMetadata = { 
             ...(lead.metadata || {}), 
             everReached: lead.metadata?.everReached || !isFailedContact 
@@ -156,21 +136,24 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                 .from('leads')
                 .update({ 
                     status_id: newStatusId,
-                    score: newScore,
                     metadata: newMetadata
                 })
                 .eq('id', lead.id);
 
             if (updateError) throw updateError;
 
+            const isAdmin = profile?.role === 'super_admin' || profile?.role === 'super_agent';
+            const isAdminChange = profile?.id !== lead.agentId && isAdmin;
+            const adminSuffix = isAdminChange ? ` (par Admin: ${profile?.full_name})` : '';
+
             await supabase.from('lead_interactions').insert({
                 lead_id: lead.id,
-                agent_id: lead.agentId,
+                agent_id: profile?.id || lead.agentId,
                 type: 'note',
-                content: `Qualif : ${dispositionLabel} (Score ${scoreIncrement > 0 ? '+' : ''}${scoreIncrement})`
+                content: `Qualif : ${dispositionLabel}` + adminSuffix
             });
 
-            onUpdate(lead.id, { statusId: newStatusId, score: newScore, metadata: newMetadata });
+            onUpdate(lead.id, { statusId: newStatusId, metadata: newMetadata });
             addToast(`"${dispositionLabel}" enregistré`, "success");
             onClose();
         } catch (error: unknown) {
@@ -231,60 +214,57 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
     }));
 
     return (
-        <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            backdropFilter: 'blur(8px)', display: 'grid', placeItems: 'center', zIndex: 1100, padding: '2rem'
-        }} onClick={onClose}>
-            <div className="card glassmorphism" style={{ width: '100%', maxWidth: '450px' }} onClick={e => e.stopPropagation()}>
-                <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Qualifier l'appel</h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Quel est le résultat de votre échange avec {lead.firstName} ?</p>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'grid', placeItems: 'center', zIndex: 3000, padding: '1rem' }} onClick={onClose}>
+            <div className="card" style={{ width: '100%', maxWidth: '480px', maxHeight: '94vh', overflowY: 'auto', background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: '28px', padding: '2rem' }} onClick={e => e.stopPropagation()}>
+                
+                <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(99, 102, 241, 0.1)', display: 'grid', placeItems: 'center', margin: '0 auto 1.25rem' }}>
+                        <Target size={32} color="var(--primary)" />
+                    </div>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'white', marginBottom: '0.5rem' }}>Qualification Directe</h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontWeight: 500 }}>Échange avec {lead.firstName} {lead.lastName}</p>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                     {sections.map((section) => (
                         <div key={section.title}>
-                            <div style={{ 
-                                fontSize: '0.7rem', 
-                                fontWeight: 800, 
-                                color: section.color, 
-                                letterSpacing: '0.1em', 
-                                marginBottom: '0.75rem',
-                                borderBottom: `1px solid ${section.color}22`,
-                                paddingBottom: '4px'
-                            }}>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: section.color, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ height: '1px', flex: 1, background: `${section.color}22` }} />
                                 {section.title}
+                                <div style={{ height: '1px', flex: 1, background: `${section.color}22` }} />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                                 {section.items.map((item) => (
                                     <button
                                         key={item.id}
                                         onClick={() => handleDisposition(item.id as DispositionType)}
+                                        disabled={profile?.role === 'observer'}
+                                        className="btn btn-ghost"
                                         style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
                                             padding: '0.75rem',
-                                            background: 'rgba(255,255,255,0.03)',
+                                            borderRadius: '14px',
+                                            justifyContent: 'flex-start',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600,
                                             border: '1px solid var(--border)',
-                                            borderRadius: '8px',
-                                            color: 'white',
-                                            fontSize: '0.8125rem',
-                                            cursor: 'pointer',
-                                            textAlign: 'left',
-                                            transition: 'all 0.2s'
+                                            background: 'rgba(255,255,255,0.01)',
+                                            transition: 'all 0.2s',
+                                            height: 'auto',
+                                            opacity: profile?.role === 'observer' ? 0.4 : 1,
+                                            cursor: profile?.role === 'observer' ? 'not-allowed' : 'pointer',
+                                            minHeight: '44px'
                                         }}
-                                        onMouseOver={e => {
-                                            e.currentTarget.style.background = `${section.color}11`;
+                                        onMouseEnter={e => {
                                             e.currentTarget.style.borderColor = section.color;
+                                            e.currentTarget.style.background = `${section.color}08`;
                                         }}
-                                        onMouseOut={e => {
-                                            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                                        onMouseLeave={e => {
                                             e.currentTarget.style.borderColor = 'var(--border)';
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.01)';
                                         }}
                                     >
-                                        <div style={{ color: section.color }}>{item.icon}</div>
-                                        {item.label}
+                                        <span style={{ color: section.color }}>{item.icon}</span>
+                                        <span style={{ marginLeft: '4px' }}>{item.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -292,12 +272,8 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                     ))}
                 </div>
 
-                <button 
-                    onClick={onClose}
-                    className="btn" 
-                    style={{ width: '100%', marginTop: '2rem', background: 'rgba(255,255,255,0.05)', color: 'white' }}
-                >
-                    Passer cette étape
+                <button onClick={onClose} className="btn btn-ghost" style={{ width: '100%', marginTop: '2.5rem', borderRadius: '14px', fontWeight: 700 }}>
+                    Annuler la qualification
                 </button>
             </div>
         </div>
