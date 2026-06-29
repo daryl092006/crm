@@ -33,9 +33,10 @@ Deno.serve(async (req) => {
             .eq('id', user.id)
             .single();
 
-        if (profileError || !profile) throw new Error("User profile not found");
-        if (!['admin', 'superagent'].includes(profile.role)) {
-            throw new Error("Forbidden: Only admins and superagents can send bulk emails");
+        if (!profileError || !profile) {
+            if (!['admin', 'superagent', 'superviseur'].includes(profile.role)) {
+                throw new Error("Forbidden: Only admins, superagents and superviseurs can send bulk emails");
+            }
         }
 
         // Get payload parameters
