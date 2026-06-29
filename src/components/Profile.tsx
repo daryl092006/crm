@@ -30,7 +30,7 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
         }
         setLoading(true);
         try {
-            const { error } = await supabase.auth.updateUser({ password: newPassword });
+            const { error } = await (supabase.auth as any).updateUser({ password: newPassword });
             if (error) throw error;
 
             // Update profile table to clear must_change_password
@@ -76,15 +76,15 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
 
 
     return (
-        <div style={{ maxWidth: '800px' }}>
+        <div style={{ maxWidth: '800px', width: '100%' }}>
             <div style={{ marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Mon Profil</h1>
+                <h1 style={{ fontSize: 'clamp(1.375rem, 3.5vw, 1.875rem)', fontWeight: 700 }}>Mon Profil</h1>
                 <p style={{ color: 'var(--text-muted)' }}>Gérez vos informations personnelles et vos préférences de sécurité.</p>
             </div>
 
-            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-                    <div style={{ position: 'relative' }}>
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '2rem', width: '100%', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
                         <div style={{
                             width: '100px',
                             height: '100px',
@@ -116,8 +116,8 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                             <Camera size={16} />
                         </button>
                     </div>
-                    <div>
-                        <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>{name}</h3>
+                    <div style={{ minWidth: 0, flex: '1 1 200px' }}>
+                        <h3 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</h3>
                         <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                             Membre ESCEN CRM • Rejoins le {new Date(profile?.created_at).toLocaleDateString()}
                         </p>
@@ -125,10 +125,10 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
 
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className="grid-responsive-2" style={{ gap: '1.5rem', width: '100%' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 0 }}>
                         <label style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontWeight: 600 }}>Nom Complet</label>
-                        <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'relative', width: '100%' }}>
                             <User size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                             <input
                                 type="text"
@@ -141,14 +141,15 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                                     border: '1px solid var(--border)',
                                     borderRadius: '10px',
                                     color: 'white',
-                                    outline: 'none'
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
                                 }}
                             />
                         </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 0 }}>
                         <label style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontWeight: 600 }}>Adresse Email</label>
-                        <div style={{ position: 'relative' }}>
+                        <div style={{ position: 'relative', width: '100%' }}>
                             <Mail size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                             <input
                                 type="email"
@@ -157,7 +158,12 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                                 style={{
                                     width: '100%',
                                     padding: '0.75rem 0.75rem 0.75rem 2.5rem',
-                                    outline: 'none'
+                                    background: 'rgba(255,255,255,0.02)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    color: 'white',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
                                 }}
                             />
                         </div>
@@ -208,11 +214,10 @@ const Profile: React.FC<ProfileProps> = ({ profile, leads, onUpdate }) => {
                     <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                         Vous avez un compte <strong>Collaborateur</strong>. Dans cette version unifiée, tout le monde dispose d'un accès complet aux données pour une gestion fluide et transparente.
                     </p>
-
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.5rem', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                         <div>
                             <h4 style={{ fontWeight: 600 }}>Guide d'utilisation</h4>
                             <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Besoin d'un rappel sur le fonctionnement d'ESCEN CRM ?</p>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, ChevronRight, ChevronLeft, Sparkles, Target, MessageSquare, LayoutDashboard, Settings } from 'lucide-react';
 
 interface TourStep {
@@ -14,7 +14,7 @@ const OnboardingTour: React.FC = () => {
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [spotlightStyles, setSpotlightStyles] = useState<React.CSSProperties>({});
 
-    const steps: TourStep[] = [
+    const steps: TourStep[] = useMemo(() => [
         {
             targetId: '', // Neutral start
             title: "Bienvenue sur ESCEN CRM",
@@ -50,7 +50,7 @@ const OnboardingTour: React.FC = () => {
             icon: <Settings size={24} color="var(--primary)" />,
             position: 'right'
         }
-    ];
+    ], []);
 
     useEffect(() => {
         const hasSeenTour = localStorage.getItem('escen_crm_tour_seen');
@@ -83,8 +83,7 @@ const OnboardingTour: React.FC = () => {
             // Auto-scroll to element if needed
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentStepIndex, isVisible]);
+    }, [currentStepIndex, isVisible, steps]);
 
     const handleNext = () => {
         if (currentStepIndex < steps.length - 1) {

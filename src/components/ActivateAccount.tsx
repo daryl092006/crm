@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import { Lock, CheckCircle2, Loader2, UserCircle, X } from 'lucide-react';
@@ -14,19 +14,7 @@ const ActivateAccount: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
 
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const t = urlParams.get('token');
-
-        if (t) {
-            checkInvitation(t);
-        } else {
-            setIsLoading(false);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const checkInvitation = async (t: string) => {
+    const checkInvitation = useCallback(async (t: string) => {
         const { data, error } = await supabase
             .from('invitations')
             .select('*')
@@ -42,7 +30,18 @@ const ActivateAccount: React.FC = () => {
             if (data.full_name) setFullName(data.full_name);
             setIsLoading(false);
         }
-    };
+    }, [addToast]);
+
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const t = urlParams.get('token');
+
+        if (t) {
+            checkInvitation(t);
+        } else {
+            setIsLoading(false);
+        }
+    }, [checkInvitation]);
 
     const handleActivate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -65,7 +64,7 @@ const ActivateAccount: React.FC = () => {
         setIsSaving(true);
         try {
             // 1. CRÉATION DU COMPTE AUTH
-            const { data: authData, error: authError } = await supabase.auth.signUp({
+            const { data: authData, error: authError } = await (supabase.auth as any).signUp({
                 email: invitation.email,
                 password: password,
             });

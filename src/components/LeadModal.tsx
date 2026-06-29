@@ -4,6 +4,8 @@ import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import { sanitizeForPostgres } from '../utils/verificationService';
 import { getBestAgentForLead } from '../utils/assignmentService';
+import { logAction } from '../utils/auditLogger';
+import { notifyAgentLeads } from '../utils/emailNotificationService';
 
 interface LeadModalProps {
     isOpen: boolean;
@@ -16,8 +18,11 @@ interface LeadModalProps {
     initialStatusId?: string;
     showConfirm: (title: string, message: string) => Promise<boolean>;
     statuses: import('../types').LeadStatus[];
+    programs: import('../types').Program[];
+    classifications: import('../types').ProspectClassification[];
+    sources: import('../types').ProspectSource[];
 }
-const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau', showConfirm, statuses }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaigns, agents, leads, profile, initialStatusId = 'nouveau', showConfirm, statuses, programs, classifications, sources }) => {
     const { addToast } = useToast();
     const [newLead, setNewLead] = useState<Partial<StudentLead>>({
         firstName: '',
@@ -31,6 +36,9 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         statusId: initialStatusId,
         campaignId: '',
         notes: '',
+        programId: null,
+        classificationId: null,
+        sourceId: null,
     });
 
     if (!isOpen) return null;
@@ -48,19 +56,25 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         // Raw Data Policy
         const finalCountry = newLead.country || '';
         const finalCity = newLead.city || '';
-        const finalPhone = newLead.phone || '';
-        
-        
+        const finalPhone = newLead.phone?.trim() || '';
+        const finalEmail = newLead.email?.toLowerCase().trim() || '';
 
+        // Au moins un moyen de contact obligatoire
+        if (!finalEmail && !finalPhone) {
+            addToast("Veuillez fournir au moins un email ou un numéro de téléphone.", "error");
+            return;
+        }
 
-        const finalEmail = newLead.email?.toLowerCase().trim();
+        // Vérification des doublons locaux/distants (uniquement sur champs non-vides)
+        const orFilters = [];
+        if (finalEmail) orFilters.push(`email.eq.${finalEmail}`);
+        if (finalPhone) orFilters.push(`phone.eq.${finalPhone}`);
 
-        // Vérification des doublons locaux/distants
-        const { data: existing } = await supabase
+        const { data: existing } = orFilters.length > 0 ? await supabase
             .from('leads')
             .select('id, first_name, last_name, email, phone')
-            .or(`email.eq.${finalEmail},phone.eq.${finalPhone}`)
-            .limit(1);
+            .or(orFilters.join(','))
+            .limit(1) : { data: [] };
 
         if (existing && existing.length > 0) {
             const confirmed = await showConfirm(
@@ -85,7 +99,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     study_level: newLead.level,
                     status_id: newLead.statusId || 'nouveau',
                     campaign_id: newLead.campaignId,
-                    organization_id: profile?.organization_id
+                    organization_id: profile?.organization_id,
+                    program_id: newLead.programId || null,
+                    classification_id: newLead.classificationId || null,
+                    source_id: newLead.sourceId || null
                 }))
                 .eq('id', existing[0].id)
                 .select()
@@ -114,7 +131,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     level: updated.study_level,
                     score: updated.score || 0,
                     lastInteractionAt: updated.last_interaction_at,
-                    createdAt: updated.created_at
+                    createdAt: updated.created_at,
+                    programId: updated.program_id,
+                    classificationId: updated.classification_id,
+                    sourceId: updated.source_id
                 });
             }
             onClose();
@@ -135,7 +155,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 status_id: newLead.statusId || 'nouveau',
                 campaign_id: newLead.campaignId,
                 agent_id: selectedA.id,
-                organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000'
+                organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000',
+                program_id: newLead.programId || null,
+                classification_id: newLead.classificationId || null,
+                source_id: newLead.sourceId || null
             }))
             .select()
             .single();
@@ -143,6 +166,13 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
         if (error) {
             addToast("Erreur lors de la création : " + (error as Error).message, "error");
         } else if (data) {
+            // Journaliser la création dans l'audit log
+            logAction('create', 'lead', {
+                entityId: data.id,
+                campaignId: data.campaign_id,
+                newValues: data
+            });
+
             if (newLead.notes) {
                 await supabase.from('lead_interactions').insert({
                     lead_id: data.id,
@@ -167,8 +197,24 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 level: data.study_level,
                 score: data.score || 0,
                 lastInteractionAt: data.last_interaction_at,
-                createdAt: data.created_at
+                createdAt: data.created_at,
+                programId: data.program_id,
+                classificationId: data.classification_id,
+                sourceId: data.source_id
             });
+            // Déclencher la notification mail
+            if (data.agent_id && selectedA) {
+                const campaignName = campaigns.find(c => c.id === data.campaign_id)?.name || 'Attribution Directe';
+                if (selectedA.email) {
+                    notifyAgentLeads(
+                        selectedA.email,
+                        selectedA.name,
+                        campaignName,
+                        1
+                    ).catch(err => console.error("Notification single agent error:", err));
+                }
+            }
+
             addToast(`Prospect ajouté et assigné à ${selectedA.name} !`, "success");
             onClose();
         }
@@ -188,24 +234,30 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <input type="text" placeholder="Prénom" required value={newLead.firstName} onChange={e => setNewLead({ ...newLead, firstName: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Nom" required value={newLead.lastName} onChange={e => setNewLead({ ...newLead, lastName: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
-                    <input type="email" placeholder="Email" required value={newLead.email} onChange={e => setNewLead({ ...newLead, email: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
+                    <input type="email" placeholder="Email (optionnel si tél. fourni)" value={newLead.email} onChange={e => setNewLead({ ...newLead, email: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <input type="tel" placeholder="Téléphone" required value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', width: '100%' }} />
+                        <input type="tel" placeholder="Téléphone (optionnel si email fourni)" value={newLead.phone} onChange={e => setNewLead({ ...newLead, phone: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', width: '100%' }} />
                     </div>
                     <input type="text" placeholder="Pays" required value={newLead.country} onChange={e => setNewLead({ ...newLead, country: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
                     <input type="text" placeholder="Ville" required value={newLead.city} onChange={e => setNewLead({ ...newLead, city: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }} />
 
                     <select
-                        value={newLead.fieldOfInterest}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        onChange={e => setNewLead({ ...newLead, fieldOfInterest: e.target.value as any })}
+                        value={newLead.programId || ''}
+                        onChange={e => {
+                            const progId = e.target.value;
+                            const prog = programs.find(p => p.id === progId);
+                            setNewLead({ 
+                                ...newLead, 
+                                programId: progId || null, 
+                                fieldOfInterest: prog ? prog.name as any : '' 
+                            });
+                        }}
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                     >
-                        <option value="Finance Digitale">Finance Digitale</option>
-                        <option value="Marketing Digital & E-commerce">Marketing Digital & E-commerce</option>
-                        <option value="Intelligence Artificielle & Génie Logiciel">Intelligence Artificielle & Génie Logiciel</option>
-                        <option value="Management de Projet Numérique">Management de Projet Numérique</option>
-                        <option value="Autre">Autre</option>
+                        <option value="">Sélectionner une Filière *</option>
+                        {programs.map(p => (
+                            <option key={p.id} value={p.id} style={{background: '#1a1b1e'}}>{p.name}</option>
+                        ))}
                     </select>
 
                     <select
@@ -226,11 +278,83 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                         style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                     >
                         {[...statuses].sort((a,b) => a.label.localeCompare(b.label)).map(s => (
-                            <option key={s.id} value={s.id}>{s.label}</option>
+                            <option key={s.id} value={s.id} style={{background: '#1a1b1e'}}>{s.label}</option>
                         ))}
                     </select>
 
-                    <input type="text" placeholder="Niveau d'étude" required value={newLead.level} onChange={e => setNewLead({ ...newLead, level: e.target.value })} style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2' }} />
+                    {/* Sélection Classement Dynamique */}
+                    <select
+                        value={newLead.classificationId || ''}
+                        onChange={e => setNewLead({ ...newLead, classificationId: e.target.value || null })}
+                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
+                    >
+                        <option value="">Sélectionner un Classement</option>
+                        {classifications.map(c => (
+                            <option key={c.id} value={c.id} style={{background: '#1a1b1e'}}>{c.name}</option>
+                        ))}
+                    </select>
+
+                    {/* Sélection Source Dynamique */}
+                    <select
+                        value={newLead.sourceId || ''}
+                        onChange={e => {
+                            const srcId = e.target.value;
+                            const src = sources.find(s => s.id === srcId);
+                            setNewLead({ 
+                                ...newLead, 
+                                sourceId: srcId || null, 
+                                source: src ? src.name : '' 
+                            });
+                        }}
+                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
+                    >
+                        <option value="">Sélectionner une Source</option>
+                        {sources.map(s => (
+                            <option key={s.id} value={s.id} style={{background: '#1a1b1e'}}>{s.name}</option>
+                        ))}
+                    </select>
+
+                    {/* Sélection Niveau d'étude Dynamique par rapport au Programme */}
+                    {(() => {
+                        const selectedProg = programs.find(p => p.id === newLead.programId);
+                        let availableLevels: string[] = [];
+
+                        if (selectedProg && selectedProg.level) {
+                            try {
+                                if (selectedProg.level.startsWith('[') && selectedProg.level.endsWith(']')) {
+                                    availableLevels = JSON.parse(selectedProg.level);
+                                } else {
+                                    availableLevels = [selectedProg.level];
+                                }
+                            } catch {
+                                availableLevels = [selectedProg.level];
+                            }
+                        }
+
+                        return (
+                            <select
+                                required
+                                value={newLead.level || ''}
+                                onChange={e => setNewLead({ ...newLead, level: e.target.value })}
+                                style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', gridColumn: 'span 2' }}
+                            >
+                                <option value="">Sélectionner un Niveau d'études *</option>
+                                {availableLevels.length > 0 ? (
+                                    availableLevels.map(lvl => (
+                                        <option key={lvl} value={lvl} style={{background: '#1a1b1e'}}>{lvl}</option>
+                                    ))
+                                ) : (
+                                    <>
+                                        <option value="Licence 1" style={{background: '#1a1b1e'}}>Licence 1</option>
+                                        <option value="Licence 2" style={{background: '#1a1b1e'}}>Licence 2</option>
+                                        <option value="Licence 3" style={{background: '#1a1b1e'}}>Licence 3</option>
+                                        <option value="Master 1" style={{background: '#1a1b1e'}}>Master 1</option>
+                                        <option value="Master 2" style={{background: '#1a1b1e'}}>Master 2</option>
+                                    </>
+                                )}
+                            </select>
+                        );
+                    })()}
                     <textarea
                         placeholder="Note / Commentaire sur le prospect..."
                         value={newLead.notes}

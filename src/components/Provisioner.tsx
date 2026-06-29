@@ -51,7 +51,7 @@ const Provisioner: React.FC = () => {
 
             // 2. Create Admin Auth Account (this will fail if email already exists in Auth)
             // Note: In client-side, we use signUp.
-            const { data: authData, error: signUpError } = await supabase.auth.signUp({
+            const { data: authData, error: signUpError } = await (supabase.auth as any).signUp({
                 email: adminEmail,
                 password: adminPassword,
                 options: {

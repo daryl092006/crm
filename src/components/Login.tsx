@@ -1,179 +1,123 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { LogIn, Building2, ShieldCheck } from 'lucide-react';
+import {
+    Lock,
+    Mail,
+    ArrowRight,
+    Eye,
+    EyeOff,
+    Shield
+} from 'lucide-react';
 import { useToast } from './Toast';
 
 export const Login: React.FC = () => {
     const { addToast } = useToast();
     const [loading, setLoading] = useState(false);
-    const [isRegister, setIsRegister] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [orgName, setOrgName] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isForgotPassword, setIsForgotPassword] = useState(false);
-
-    const translateError = (msg: string) => {
-        if (!msg) return 'Une erreur inconnue est survenue.';
-        const lowerMsg = msg.toLowerCase();
-        if (lowerMsg.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.';
-        if (lowerMsg.includes('user already registered')) return 'Cet utilisateur existe déjà.';
-        if (lowerMsg.includes('password should be at least')) return 'Le mot de passe doit contenir au moins 6 caractères.';
-        if (lowerMsg.includes('rate limit')) return 'Trop de tentatives, veuillez patienter avant de réessayer.';
-        if (lowerMsg.includes('organizations_name_key') || lowerMsg.includes('duplicate key value')) return 'Ce nom d\'entreprise est déjà utilisé.';
-        if (lowerMsg.includes('missing email')) return 'Veuillez renseigner un email valide.';
-        return 'Une erreur est survenue : ' + msg;
-    };
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-
         try {
             if (isForgotPassword) {
-                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                const { error } = await (supabase.auth as any).resetPasswordForEmail(email, {
                     redirectTo: `${window.location.origin}/`,
                 });
                 if (error) throw error;
-                addToast('Si ce compte existe, un email de réinitialisation vous a été envoyé.', 'success');
+                addToast('Email envoyé.', 'success');
                 setIsForgotPassword(false);
-            } else if (isRegister) {
-                // 1. Créer l'organisation d'abord
-                const { data: org, error: orgError } = await supabase
-                    .from('organizations')
-                    .insert({ name: orgName })
-                    .select()
-                    .single();
-
-                if (orgError) throw orgError;
-
-                // 2. Créer l'utilisateur avec organization_id et rôle ADMIN par défaut
-                const { error: signUpError } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: {
-                            organization_id: org.id,
-                            role: 'admin', // C'est le créateur, il est admin par défaut
-                            full_name: email.split('@')[0]
-                        }
-                    }
-                });
-
-                if (signUpError) throw signUpError;
-                addToast('Espace entreprise créé avec succès ! Connectez-vous pour commencer.', 'success');
-                setIsRegister(false); // Bascule sur la connexion
             } else {
-                const { error } = await supabase.auth.signInWithPassword({
+                const { error } = await (supabase.auth as any).signInWithPassword({
                     email: email.trim(),
                     password
                 });
                 if (error) throw error;
             }
-        } catch (error: unknown) {
-            console.error('Auth Error Details:', error);
-            addToast(translateError((error as Error).message || JSON.stringify(error)), 'error');
+        } catch (error: any) {
+            addToast(error.message || 'Erreur', 'error');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div style={{ height: '100vh', width: '100vw', display: 'grid', placeItems: 'center', background: 'var(--bg-main)', position: 'fixed', top: 0, left: 0, zIndex: 9999 }}>
-            <div className="card" style={{ width: '400px', padding: '2.5rem', position: 'relative', zIndex: 10000 }}>
+        <div style={{
+            height: '100vh', width: '100vw', background: '#0a0a0a',
+            display: 'grid', placeItems: 'center', position: 'fixed', inset: 0, zIndex: 9999,
+            fontFamily: "'Inter', sans-serif"
+        }}>
+            <div style={{
+                width: '100%', maxWidth: '380px', padding: '2.5rem',
+                background: '#111', border: '1px solid #222', borderRadius: '16px',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                animation: 'slideUp 0.5s ease'
+            }}>
+                <style>{`
+                    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                    .f-label { font-size: 12px; font-weight: 700; color: #666; margin-bottom: 8px; display: block; letter-spacing: 0.02em; }
+                    .i-field { 
+                        width: 100%; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; 
+                        padding: 12px 14px; padding-right: 40px; color: white; font-size: 14px; transition: all 0.2s;
+                    }
+                    .i-field:focus { outline: none; border-color: var(--primary); background: #222; }
+                    .b-submit { 
+                        width: 100%; background: var(--primary); color: white; border: none; padding: 12px; 
+                        border-radius: 12px; font-weight: 700; font-size: 15px; display: flex; 
+                        align-items: center; justify-content: center; gap: 8px; cursor: pointer; margin-top: 1.5rem; transition: 0.2s;
+                    }
+                    .b-submit:hover { filter: brightness(1.1); transform: translateY(-1px); }
+                    .p-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 0; color: #444; cursor: pointer; }
+                `}</style>
+
                 <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <div style={{
-                        width: '64px', height: '64px', background: 'var(--primary)',
-                        borderRadius: '16px', display: 'grid', placeItems: 'center', margin: '0 auto 1rem'
-                    }}>
-                        <ShieldCheck size={32} color="white" />
+                    <div style={{ display: 'inline-flex', padding: '12px', background: 'rgba(99, 102, 241, 0.08)', borderRadius: '14px', marginBottom: '1rem' }}>
+                        <Shield size={24} color="var(--primary)" />
                     </div>
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>
-                        {isForgotPassword ? 'Mot de passe oublié' : (isRegister ? 'Créer mon CRM' : 'Accès ESCEN CRM')}
-                    </h2>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                        {isForgotPassword ? 'Entrez votre email pour réinitialiser.' : (isRegister ? 'Configurez votre espace entreprise en 2 minutes.' : 'Connectez-vous pour gérer vos candidats.')}
-                    </p>
+                    <h1 style={{ fontSize: '20px', fontWeight: 900, color: 'white', letterSpacing: '-0.02em' }}>ESCEN CRM</h1>
+                    <p style={{ color: '#666', fontSize: '14px', marginTop: '4px' }}>Portail d'Accès Sécurisé</p>
                 </div>
 
-                <form
-                    key={isRegister ? 'reg' : 'log'}
-                    onSubmit={handleAuth}
-                    style={{ display: 'grid', gap: '1rem' }}
-                >
-                    {!isForgotPassword && isRegister && (
-                        <div>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>NOM DE L'ENTREPRISE</label>
-                            <div style={{ position: 'relative' }}>
-                                <Building2 size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: 'var(--text-muted)' }} />
-                                <input
-                                    name="organization"
-                                    id="organization"
-                                    type="text" required placeholder=""
-                                    value={orgName} onChange={e => setOrgName(e.target.value)}
-                                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
+                <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     <div>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>EMAIL PROFESSIONNEL</label>
+                        <label className="f-label">ADRESSE E-MAIL</label>
                         <input
-                            name="email"
-                            id="email"
-                            type="email" required placeholder=""
+                            required type="email" className="i-field"
+                            placeholder="nom@entreprise.com"
                             value={email} onChange={e => setEmail(e.target.value)}
-                            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
                         />
                     </div>
 
                     {!isForgotPassword && (
                         <div>
-                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '0.5rem' }}>MOT DE PASSE</label>
-                            <input
-                                name="password"
-                                id="password"
-                                type="password" required placeholder=""
-                                value={password} onChange={e => setPassword(e.target.value)}
-                                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white' }}
-                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <label className="f-label">MOT DE PASSE</label>
+                                <button type="button" onClick={() => setIsForgotPassword(true)} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '11px', fontWeight: 800 }}>OUBLIÉ ?</button>
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    required type={showPassword ? 'text' : 'password'} className="i-field"
+                                    placeholder="••••••••"
+                                    value={password} onChange={e => setPassword(e.target.value)}
+                                />
+                                <button type="button" className="p-toggle" onClick={() => setShowPassword(!showPassword)}>
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
                         </div>
                     )}
 
-                    {!isForgotPassword && !isRegister && (
-                        <div style={{ textAlign: 'right', marginTop: '-0.5rem' }}>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsForgotPassword(true);
-                                }}
-                                style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem', padding: 0 }}
-                            >
-                                Mot de passe oublié ?
-                            </button>
-                        </div>
-                    )}
-
-                    <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', height: '45px', justifyContent: 'center' }}>
-                        {loading ? 'Traitement...' : isForgotPassword ? 'Envoyer le lien' : (isRegister ? 'Créer mon compte' : 'Me connecter')}
-                        {!loading && !isForgotPassword && (isRegister ? <Building2 size={18} /> : <LogIn size={18} />)}
+                    <button type="submit" disabled={loading} className="b-submit">
+                        {loading ? 'Connexion en cours...' : (isForgotPassword ? 'Envoyer le lien' : 'Se connecter')}
+                        {!loading && <ArrowRight size={18} />}
                     </button>
                 </form>
 
-                <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
-                    <button
-                        onClick={() => {
-                            if (isForgotPassword) {
-                                setIsForgotPassword(false);
-                            } else {
-                                setIsRegister(!isRegister);
-                            }
-                        }}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
-                    >
-                        {isForgotPassword ? 'Retour à la connexion' : (isRegister ? 'Déjà un compte ? Connectez-vous' : "Pas encore de compte ? Créer l'espace Entreprise")}
-                    </button>
-                </div>
+                {isForgotPassword && (
+                    <button onClick={() => setIsForgotPassword(false)} style={{ width: '100%', background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '12px', marginTop: '1.5rem', fontWeight: 600 }}>Annuler et revenir</button>
+                )}
             </div>
         </div>
     );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe, Pencil, Check } from 'lucide-react';
-import type { Agent, StudentLead, LeadStatus, Campaign } from '../types';
+import { X, CheckCircle2, UserCheck, Activity, Users, PieChart, PhoneOff, Zap, Award, Sparkles, Search, Filter, CheckSquare, Square, UserPlus, ChevronDown, MessageSquare, TrendingUp, ChevronLeft, ChevronRight, Globe, Pencil, Check, Download } from 'lucide-react';
+import type { Agent, StudentLead, LeadStatus, Campaign, Interaction } from '../types';
+import { isNewLead, isInscribedLead, isAdmittedLead, isFailedLead, getLeadPhase } from '../utils/leadUtils';
 import { supabase } from '../supabaseClient';
 import { smartParsePhone, sanitizeForPostgres, resolveCityToCountry, resolveGeographicTruth, COUNTRIES_DB } from '../utils/verificationService';
 import { usePopup } from './Popup';
@@ -28,8 +29,8 @@ interface AgentStatsModalProps {
 const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose, onRefresh }) => {
     const { addToast } = useToast();
     const { showConfirm } = usePopup();
-    const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<unknown | null>(null);
-    const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<unknown | null>(null);
+    const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<StudentLead | null>(null);
+    const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<StudentLead | null>(null);
     const [isHarmonizing, setIsHarmonizing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
@@ -58,32 +59,21 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const stats = React.useMemo(() => {
         const total = filteredLeadsByCampaign.length;
-        const nonContacted = filteredLeadsByCampaign.filter(l => {
-            const sid = (l.statusId || '').toLowerCase();
-            const slabel = (l.status?.label || '').toLowerCase();
-            return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
-        }).length;
+        const nonContacted = filteredLeadsByCampaign.filter(isNewLead).length;
         const contacted = total - nonContacted;
-        const pasRepondu = filteredLeadsByCampaign.filter(l => {
-            const sid = (l.statusId || '').toLowerCase();
-            return sid === 'injoignable' || sid === 'repondeur' || (l.status?.label || '').toLowerCase().includes('injoignable');
-        }).length;
+        const pasRepondu = filteredLeadsByCampaign.filter(isFailedLead).length;
         const reached = contacted - pasRepondu;
-        const inscribed = filteredLeadsByCampaign.filter(l => {
-            const sid = (l.statusId || '').toLowerCase();
-            const slabel = (l.status?.label || '').toLowerCase();
-            return ['admis', 'inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
-        }).length;
+        const inscribed = filteredLeadsByCampaign.filter(l => isInscribedLead(l) || isAdmittedLead(l)).length;
         const conversion = reached > 0 ? Math.round((inscribed / reached) * 100) : 0;
         const contact = total > 0 ? Math.round((contacted / total) * 100) : 0;
         const avgScore = total > 0 ? Math.round(filteredLeadsByCampaign.reduce((acc, curr) => acc + (curr.score || 0), 0) / total) : 0;
 
-        const fieldCounts = filteredLeadsByCampaign.reduce((acc: unknown, curr) => {
+        const fieldCounts = filteredLeadsByCampaign.reduce((acc: Record<string, number>, curr) => {
             const field = curr.fieldOfInterest || 'Non spécifié';
             acc[field] = (acc[field] || 0) + 1;
             return acc;
         }, {});
-        const topFields = Object.entries(fieldCounts).sort(([, a]: unknown, [, b]: unknown) => b - a).slice(0, 3);
+        const topFields = Object.entries(fieldCounts).sort(([, a], [, b]) => b - a).slice(0, 3);
 
         return { total, nonContacted, contacted, pasRepondu, reached, inscribed, conversion, contact, avgScore, topFields };
     }, [filteredLeadsByCampaign]);
@@ -198,7 +188,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 }
             });
 
-            const alerts: unknown[] = [];
+            const alerts: { type: 'duplicate' | 'format' | 'country'; count: number; details: string[]; leadIds: string[] }[] = [];
             if (dups > 0) alerts.push({ type: 'duplicate', count: dups, details: duplicateNames, leadIds: duplicateIds });
             if (badFormats > 0) alerts.push({ type: 'format', count: badFormats, details: formatErrorNames, leadIds: formatErrorIds });
             if (badCountries > 0) alerts.push({ type: 'country', count: badCountries, details: countryErrorNames, leadIds: countryErrorIds });
@@ -217,7 +207,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         const isDialogue = !['nouveau', 'injoignable', 'repondeur', 'faux_numero'].some(k => sid.includes(k));
         const newMetadata = sanitizeForPostgres({ ...(lead.metadata || {}), everReached: lead.metadata?.everReached || isDialogue });
         const newStatus = statuses.find(s => s.id === newStatusId);
-        setLeads((prev: unknown[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
+        setLeads((prev: StudentLead[]) => prev.map(l => l.id === leadId ? { ...l, statusId: newStatusId, status: newStatus, metadata: newMetadata } : l));
         await supabase.from('leads').update({ status_id: newStatusId, metadata: newMetadata }).eq('id', leadId);
     };
 
@@ -232,10 +222,10 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
             if (error) throw error;
 
-            setLeads((prev: unknown[]) => prev.map(l => l.id === leadId ? { ...l, notes: tempNoteValue } : l));
+            setLeads((prev: StudentLead[]) => prev.map(l => l.id === leadId ? { ...l, notes: tempNoteValue } : l));
             addToast("Note mise à jour !", "success");
             setEditingNoteId(null);
-        } catch {
+        } catch (error) {
             addToast((error as Error).message, "error");
         } finally {
             setIsSavingNote(false);
@@ -278,7 +268,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
             const intelligentPhone = formatIntelligentPhone(l.phone, countryInfo);
 
             selectedColumns.forEach(id => {
-                let val = (l as unknown)[id];
+                let val = (l as any)[id];
                 if (id === 'statusId') val = l.status?.label || l.statusId;
                 if (id === 'phone') val = intelligentPhone;
                 if (id === 'country') val = countryInfo ? countryInfo.name : l.country;
@@ -294,16 +284,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         addToast(`${leadsToExport.length} prospects exportés.`, "success");
     };
 
-    const getPhaseLabel = (lead: unknown) => {
-        const sid = (lead.statusId || '').toLowerCase();
-        // ROADMAP: Décision (Clôture)
-        if (['admis', 'inscription_attente', 'inscrit'].includes(sid)) return 'Décision';
-        // ROADMAP: Candidature (Engagement fort)
-        if (['rdv_planifie', 'dossier_recu'].includes(sid)) return 'Candidature';
-        // ROADMAP: Information (Intérêt manifesté)
-        if (['interesse', 'rappel', 'reflexion', 'reorientation'].includes(sid)) return 'Information';
-        // ROADMAP: Qualification (Entrée/Echec)
-        return 'Qualification';
+    const getPhaseLabel = (lead: StudentLead) => {
+        return getLeadPhase(lead);
     };
 
     const handleBulkAssign = async (targetAgentId: string) => {
@@ -324,11 +306,11 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
             if (error) throw error;
 
-            setLeads((prev: unknown[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
+            setLeads((prev: StudentLead[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
             addToast(`${selectedLeadIds.length} prospects réattribués avec succès !`, "success");
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
-        } catch {
+        } catch (error) {
             addToast("Erreur lors de la réattribution.", "error");
         } finally {
             setIsReassigning(false);
@@ -369,14 +351,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
             else if (onClose) onClose();
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
-        } catch {
+        } catch (error) {
             addToast("Erreur lors de la répartition IA.", "error");
         } finally {
             setIsReassigning(false);
         }
     };
 
-    const handleSelectAll = (filteredLeads: unknown[]) => {
+    const handleSelectAll = (filteredLeads: StudentLead[]) => {
         if (selectedLeadIds.length === filteredLeads.length) {
             setSelectedLeadIds([]);
         } else {
@@ -401,7 +383,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         let mergedCount = 0;
         const seenPhones = new Map<string, boolean>();
         const leadsToDelete: string[] = [];
-        const allUpdates: unknown[] = [];
+        const allUpdates: { id: string, data: Partial<StudentLead> }[] = [];
 
         try {
             const currentLeads = [...leads];
@@ -526,7 +508,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
             addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés définitivement.`, "success");
             if (onRefresh) await onRefresh();
             else if (onClose) onClose();
-        } catch {
+        } catch (error: any) {
             console.error("Détail Erreur IA:", error);
             addToast(`Erreur : ${error?.message || "Échec du nettoyage IA"}`, "error");
         } finally {
@@ -540,7 +522,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                 <div style={{ padding: window.innerWidth < 768 ? '1.5rem' : '2rem 3rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth < 768 ? '0.75rem' : '2rem' }}>
-                        <div style={{ width: window.innerWidth < 768 ? '40px' : '74px', height: window.innerWidth < 768 ? '40px' : '74px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: window.innerWidth < 768 ? '1rem' : '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: unknown) => n[0]).join('') : '?'}</div>
+                        <div style={{ width: window.innerWidth < 768 ? '40px' : '74px', height: window.innerWidth < 768 ? '40px' : '74px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'grid', placeItems: 'center', fontWeight: 900, color: 'white', fontSize: window.innerWidth < 768 ? '1rem' : '1.75rem' }}>{agent?.name ? agent.name.split(' ').map((n: string) => n[0]).join('') : '?'}</div>
                         <div>
                             <h2 style={{ fontSize: window.innerWidth < 768 ? '1.25rem' : '2.5rem', fontWeight: 950, letterSpacing: '-0.04em', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{window.innerWidth < 768 ? 'Performance' : `Centre de Performance : ${agent?.name || 'Inconnu'}`}</h2>
                             <p style={{ color: 'var(--text-muted)', fontSize: window.innerWidth < 768 ? '0.75rem' : '1.125rem' }}>Vue stratégique 360° • Temps réel</p>
@@ -557,9 +539,9 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     <div className="stat-grid" style={{ marginBottom: '3rem' }}>
                         {[
                             { label: 'Inscrits', color: 'var(--success)', icon: <CheckCircle2 size={24} />, count: inscribedLeadsCount, detail: 'Résultat final' },
-                            { label: 'Pas Répondu', color: '#f59e0b', icon: <PhoneOff size={24} />, count: pasReponduCount, detail: 'Appels sans réponse' },
-                            { label: 'Contactés', color: '#10b981', icon: <UserCheck size={24} />, count: contactedLeadsCount, detail: 'Statut ≠ Nouveau' },
-                            { label: 'Non Contactés', color: '#ef4444', icon: <Zap size={24} />, count: nonContactedCount, detail: 'Statut = Non Contacté' },
+                            { label: 'Injoignables', color: 'var(--warning)', icon: <PhoneOff size={24} />, count: pasReponduCount, detail: 'Appels sans réponse' },
+                            { label: 'Contactés', color: 'var(--accent)', icon: <UserCheck size={24} />, count: contactedLeadsCount, detail: 'Statut ≠ Nouveau' },
+                            { label: 'Non Contactés', color: 'var(--danger)', icon: <Zap size={24} />, count: nonContactedCount, detail: 'Statut = Non Contacté' },
                             { label: 'Total Dossiers', color: 'var(--primary)', icon: <Users size={24} />, count: totalLeads, detail: 'Portefeuille total' }
                         ].map((s, i) => (
                             <div key={i} style={{ padding: '2rem', background: 'rgba(255,255,255,0.02)', borderRadius: '28px', border: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
@@ -610,7 +592,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 <h3 style={{ fontSize: '1.5rem', fontWeight: 900 }}>Top Filières</h3>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                                {topFields.map(([field, count]: unknown, i) => (
+                                {topFields.map(([field, count]: [string, number], i) => (
                                     <div key={i}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', marginBottom: '0.5rem' }}>
                                             <span style={{ fontWeight: 800 }}>{field}</span>
@@ -680,19 +662,34 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                     {/* ONGLETS DE CAMPAGNE (Multi-campagnes detectées) */}
                     {(agentCampaigns.length > 1 || selectedCampaignTab !== 'all') && (
-                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', background: 'rgba(255,255,255,0.02)', padding: '6px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: 'fit-content' }}>
+                        <div style={{
+                            display: 'flex',
+                            gap: '0.5rem',
+                            marginBottom: '2rem',
+                            background: 'rgba(255,255,255,0.02)',
+                            padding: '6px',
+                            borderRadius: '16px',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            width: '100%',
+                            overflowX: 'auto',
+                            scrollbarWidth: 'none',
+                            msOverflowStyle: 'none'
+                        }} className="no-scrollbar">
+                            <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
                             <button
                                 onClick={() => setSelectedCampaignTab('all')}
                                 style={{
                                     padding: '10px 20px',
                                     borderRadius: '12px',
                                     border: 'none',
-                                    background: selectedCampaignTab === 'all' ? 'var(--primary)' : 'transparent',
+                                    background: selectedCampaignTab === 'all' ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
                                     color: selectedCampaignTab === 'all' ? 'white' : 'var(--text-muted)',
                                     fontWeight: 700,
                                     fontSize: '0.875rem',
                                     cursor: 'pointer',
-                                    transition: 'all 0.2s'
+                                    transition: 'all 0.2s',
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0
                                 }}
                             >
                                 Toutes les Campagnes ({leads.length})
@@ -707,12 +704,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             padding: '10px 20px',
                                             borderRadius: '12px',
                                             border: 'none',
-                                            background: selectedCampaignTab === c.id ? 'var(--primary)' : 'transparent',
+                                            background: selectedCampaignTab === c.id ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
                                             color: selectedCampaignTab === c.id ? 'white' : 'var(--text-muted)',
                                             fontWeight: 700,
                                             fontSize: '0.875rem',
                                             cursor: 'pointer',
-                                            transition: 'all 0.2s'
+                                            transition: 'all 0.2s',
+                                            whiteSpace: 'nowrap',
+                                            flexShrink: 0
                                         }}
                                     >
                                         {c.name} ({count})
@@ -749,18 +748,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                 { id: 'whatsapp_indisponible', label: 'WhatsApp Indisponible', color: '#94a3b8' }
                             ].map(st => {
                                 const count = filteredLeadsByCampaign.filter(l => {
+                                    if (st.id === 'nouveau') return isNewLead(l);
+                                    if (st.id === 'inscrit') return isInscribedLead(l);
+                                    if (st.id === 'admis') return isAdmittedLead(l);
+
                                     const sid = (l.statusId || '').toLowerCase();
                                     const slabel = (l.status?.label || '').toLowerCase();
-
-                                    // Robust matching
-                                    if (st.id === 'nouveau') {
-                                        return sid === 'nouveau' || sid === '' || sid === 'non_contacte' || slabel.includes('nouveau') || slabel.includes('non contacté') || slabel.includes('pas contacté');
-                                    }
-
-                                    if (st.id === 'inscrit') return ['inscrit', 'confirme'].some(k => sid.includes(k) || slabel.includes(k));
-                                    if (st.id === 'admis') return sid === 'admis' || slabel.includes('admis');
-
-                                    // Match by ID or Label (case-insensitive and partial for WhatsApp)
                                     return sid === st.id || slabel === st.label.toLowerCase() || (st.id === 'whatsapp_indisponible' && (slabel.includes('whatsapp') || sid.includes('whatsapp')));
                                 }).length;
                                 return (
@@ -792,99 +785,63 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                     {/* DÉTAIL DYNAMIQUE */}
                     <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                <div style={{ padding: '14px', background: 'rgba(99, 102, 241, 0.15)', borderRadius: '18px' }}><Users size={28} color="var(--primary)" /></div>
-                                <h3 style={{ fontSize: '2rem', fontWeight: 950 }}>Registre des Prospects</h3>
-                            </div>
-
-                            {/* Filtres Intelligents */}
-                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
-                                    <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                    <input
-                                        type="text"
-                                        placeholder="Rechercher par nom, email, tél..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="input"
-                                        style={{ paddingLeft: '45px', width: '100%', borderRadius: '14px', height: '45px' }}
-                                    />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem', gap: '2rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                                <div style={{
+                                    padding: '16px',
+                                    background: 'rgba(99, 102, 241, 0.1)',
+                                    borderRadius: '22px',
+                                    border: '1px solid rgba(99, 102, 241, 0.2)'
+                                }}>
+                                    <Users size={32} color="var(--primary)" />
                                 </div>
-                                <div style={{ display: 'flex', gap: '10px' }}>
-                                    <div style={{ position: 'relative' }}>
-                                        <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                        <select
-                                            value={filterStatus}
-                                            onChange={(e) => setFilterStatus(e.target.value)}
-                                            className="input"
-                                            style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
-                                        >
-                                            <option value="all">Tous les Statuts</option>
-                                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                                        </select>
-                                    </div>
-                                    <div style={{ position: 'relative' }}>
-                                        <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                                        <select
-                                            value={filterCountry}
-                                            onChange={(e) => setFilterCountry(e.target.value)}
-                                            className="input"
-                                            style={{ paddingLeft: '35px', borderRadius: '14px', height: '45px', minWidth: '150px' }}
-                                        >
-                                            <option value="all">Tous les Pays</option>
-                                            {Array.from(new Set(leads.map(l => l.country).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', padding: '0 10px', color: 'var(--primary)', fontWeight: 800, fontSize: '0.85rem' }}>
-                                    {leads.filter(l => {
-                                        const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
-                                        const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
-                                        const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                        const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
-                                        return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
-                                    }).length} prospects trouvés
+                                <div>
+                                    <h3 style={{ fontSize: '2.25rem', fontWeight: 950, letterSpacing: '-0.04em' }}>Registre des Prospects</h3>
+                                    <p style={{ color: 'var(--text-muted)', fontWeight: 500 }}>Suivi opérationnel et gestion des leads assignés.</p>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button
-                                    onClick={handleMassHarmonize}
-                                    disabled={isHarmonizing}
-                                    className="btn"
-                                    style={{
-                                        padding: '0.9rem 2rem',
-                                        borderRadius: '18px',
-                                        fontSize: '0.9rem',
-                                        fontWeight: 800,
-                                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1))',
-                                        color: '#a855f7',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        border: '1px solid rgba(168, 85, 247, 0.2)',
-                                        boxShadow: '0 0 15px rgba(168, 85, 247, 0.1)'
-                                    }}
-                                >
-                                    <Sparkles size={16} className={isHarmonizing ? 'animate-spin' : ''} />
-                                    {isHarmonizing ? 'Analyse IA...' : 'Assistant IA'}
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button onClick={handleMassHarmonize} disabled={isHarmonizing} className="btn" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '0.8rem 1.5rem', borderRadius: '14px' }}>
+                                    <Sparkles size={18} className={isHarmonizing ? 'animate-spin' : ''} /> {isHarmonizing ? 'Analyse...' : 'Assistant IA'}
                                 </button>
-                                <button
-                                    onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])}
-                                    className="btn btn-primary"
-                                    style={{ padding: '0.9rem 2.5rem', borderRadius: '18px', fontSize: '1rem', fontWeight: 900 }}
-                                >
-                                    Exporter XLS
+                                <button onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])} className="btn btn-primary" style={{ borderRadius: '14px', padding: '0.8rem 1.5rem' }}>
+                                    <Download size={18} /> Rapport Complet
                                 </button>
                             </div>
                         </div>
 
-                        <div className="table-container">
-                            <table>
+                        {/* Barre de Filtres Avancée */}
+                        <div className="card" style={{ marginBottom: '2.5rem', padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
+                                    <Search size={18} style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Filtrer par nom, e-mail ou téléphone..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 3rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', borderRadius: '14px', color: 'white' }}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: '0.7rem 1.25rem', borderRadius: '14px', minWidth: '160px' }}>
+                                        <option value="all">Tous les Statuts</option>
+                                        {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                    </select>
+                                    <select value={filterCountry} onChange={(e) => setFilterCountry(e.target.value)} style={{ padding: '0.7rem 1.25rem', borderRadius: '14px', minWidth: '160px' }}>
+                                        <option value="all">Tous les Pays</option>
+                                        {Array.from(new Set(leads.map(l => l.country).filter(Boolean))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="table-container card" style={{ padding: 0, overflow: 'hidden' }}>
+                            <table style={{ tableLayout: 'fixed' }}>
                                 <thead>
                                     <tr>
-                                        <th style={{ width: '50px' }}>
+                                        <th style={{ width: '50px', textAlign: 'center' }}>
                                             <button
                                                 onClick={() => {
                                                     const filteredItems = leads.filter(l => {
@@ -898,15 +855,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                                 }}
                                                 style={{ background: 'transparent', border: 'none', color: selectedLeadIds.length > 0 ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
                                             >
-                                                {selectedLeadIds.length > 0 ? <CheckSquare size={22} /> : <Square size={22} />}
+                                                {selectedLeadIds.length > 0 ? <CheckSquare size={18} /> : <Square size={18} />}
                                             </button>
                                         </th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Prospect</th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Contact & Pays</th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Statut CRM</th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Modification Statut</th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 800 }}>Score</th>
-                                        <th style={{ padding: '1.75rem', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 800 }}>Dernière Note</th>
+                                        <th style={{ width: '250px' }}>Prospect</th>
+                                        <th style={{ width: '180px' }}>Contact</th>
+                                        <th style={{ width: '200px' }}>État du Dossier</th>
+                                        <th style={{ width: '120px', textAlign: 'center' }}>Score</th>
+                                        <th style={{ width: '320px' }}>Note & Historique</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -921,9 +877,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                             const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
                                             const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
 
-                                            // ISOLATION IA
                                             if (filterOnlyProblems) {
-                                                const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as unknown;
+                                                const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems);
                                                 if (!currentAlert?.leadIds?.includes(l.id)) return false;
                                             }
 
@@ -932,297 +887,93 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                                         const startIndex = (currentPage - 1) * itemsPerPage;
                                         return filtered.slice(startIndex, startIndex + itemsPerPage);
-                                    })()
-                                        .map((lead: unknown) => {
-                                            const phase = getPhaseLabel(lead);
-                                            const countryInfo = findCountryInfo(lead.country, lead.phone);
-                                            const intelligentPhone = formatIntelligentPhone(lead.phone, countryInfo);
-                                            const sid = (lead.statusId || '').toLowerCase();
-                                            const isFailed = (sid.includes('injoignable') || sid.includes('repondeur'));
+                                    })().map((lead: StudentLead) => {
+                                        const phase = getPhaseLabel(lead);
+                                        const countryInfo = findCountryInfo(lead.country, lead.phone);
+                                        const intelligentPhone = formatIntelligentPhone(lead.phone, countryInfo);
+                                        const isFailed = isFailedLead(lead);
 
-                                            return (
-                                                <tr key={lead.id} style={{ borderTop: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.4s ease', background: highlightedLeadId === lead.id ? 'rgba(99, 102, 241, 0.15)' : selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }} className={`hover-row ${highlightedLeadId === lead.id ? 'highlighted-row' : ''}`}>
-                                                    <td style={{ padding: '1.75rem', textAlign: 'center' }}>
-                                                        <button
-                                                            onClick={() => toggleLeadSelection(lead.id)}
-                                                            style={{ background: 'transparent', border: 'none', color: selectedLeadIds.includes(lead.id) ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
-                                                        >
-                                                            {selectedLeadIds.includes(lead.id) ? <CheckSquare size={22} /> : <Square size={22} />}
-                                                        </button>
-                                                    </td>
-                                                    <td>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                                                            <div style={{ fontWeight: 900, fontSize: '1.25rem' }}>{lead.firstName} {lead.lastName}</div>
-                                                            {lead.metadata?.everReached && <div style={{ fontSize: '0.7rem', background: 'rgba(34, 197, 94, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontWeight: 900 }}>Contact OK</div>}
-                                                        </div>
-                                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '6px' }}>{lead.email}</div>
-                                                    </td>
-                                                    <td>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                <span style={{ fontWeight: 800, fontSize: '1rem', color: 'white' }}>{intelligentPhone}</span>
-                                                            </div>
-                                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                                📍 {countryInfo ? countryInfo.name : (lead.country || 'Pays inconnu')}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div style={{ fontSize: '0.75rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>{phase}</div>
-                                                        <div style={{ fontWeight: 800, fontSize: '1.125rem' }}>{lead.status?.label || lead.statusId}</div>
-                                                    </td>
-                                                    <td>
-                                                        <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} className="input" style={{ borderRadius: '14px', width: '100%', maxWidth: '200px', fontWeight: 700 }}>
-                                                            {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map((s: unknown) => (
-                                                                <option key={s.id} value={s.id}>{s.label}</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                    <td style={{ textAlign: 'center' }}>
-                                                        <div style={{ fontSize: '1.25rem', fontWeight: 950, color: lead.score > 50 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</div>
-                                                    </td>
-                                                    <td>
-                                                        <div
-                                                            style={{
-                                                                fontSize: '0.875rem',
-                                                                background: 'rgba(255,255,255,0.03)',
-                                                                padding: '8px 12px',
-                                                                borderRadius: '15px',
-                                                                border: '1px solid rgba(255,255,255,0.1)',
-                                                                minHeight: '60px',
-                                                                display: 'flex',
-                                                                flexDirection: 'column',
-                                                                gap: '4px',
-                                                                transition: 'all 0.2s',
-                                                                position: 'relative'
-                                                            }}
-                                                        >
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                                <div
-                                                                    onClick={() => setSelectedLeadForHistory(lead)}
-                                                                    style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
-                                                                >
-                                                                    <MessageSquare size={10} /> VOIR HISTORIQUE
-                                                                </div>
-                                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                                    {editingNoteId === lead.id ? (
-                                                                        <button
-                                                                            onClick={() => handleUpdateNote(lead.id)}
-                                                                            disabled={isSavingNote}
-                                                                            style={{ background: 'transparent', border: 'none', color: 'var(--success)', cursor: 'pointer', padding: 0 }}
-                                                                        >
-                                                                            <Check size={14} />
-                                                                        </button>
-                                                                    ) : (
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setEditingNoteId(lead.id);
-                                                                                setTempNoteValue(lead.notes || "");
-                                                                            }}
-                                                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
-                                                                        >
-                                                                            <Pencil size={14} />
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            {editingNoteId === lead.id ? (
-                                                                <textarea
-                                                                    value={tempNoteValue}
-                                                                    onChange={(e) => setTempNoteValue(e.target.value)}
-                                                                    autoFocus
-                                                                    style={{
-                                                                        background: 'rgba(0,0,0,0.3)',
-                                                                        border: '1px solid var(--primary)',
-                                                                        color: 'white',
-                                                                        fontSize: '0.8rem',
-                                                                        padding: '4px',
-                                                                        borderRadius: '6px',
-                                                                        width: '100%',
-                                                                        minHeight: '40px',
-                                                                        resize: 'none',
-                                                                        outline: 'none'
-                                                                    }}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter' && e.ctrlKey) handleUpdateNote(lead.id);
-                                                                        if (e.key === 'Escape') setEditingNoteId(null);
-                                                                    }}
-                                                                />
-                                                            ) : (
-                                                                <div
-                                                                    onClick={() => {
-                                                                        setEditingNoteId(lead.id);
-                                                                        setTempNoteValue(lead.notes || "");
-                                                                    }}
-                                                                    style={{ fontSize: '0.8rem', color: 'white', opacity: lead.notes ? 1 : 0.3, cursor: 'text' }}
-                                                                >
-                                                                    {lead.notes ? (lead.notes.length > 60 ? lead.notes.substring(0, 57) + "..." : lead.notes) : "Aucune note..."}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                        return (
+                                            <tr key={lead.id} style={{ transition: 'all 0.2s', background: highlightedLeadId === lead.id ? 'rgba(99, 102, 241, 0.15)' : selectedLeadIds.includes(lead.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <button
+                                                        onClick={() => toggleLeadSelection(lead.id)}
+                                                        style={{ background: 'transparent', border: 'none', color: selectedLeadIds.includes(lead.id) ? 'var(--primary)' : 'var(--text-muted)', cursor: 'pointer' }}
+                                                    >
+                                                        {selectedLeadIds.includes(lead.id) ? <CheckSquare size={18} /> : <Square size={18} />}
+                                                    </button>
+                                                </td>
+                                                <td>
+                                                    <div style={{ fontWeight: 800, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.firstName} {lead.lastName}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email}</div>
+                                                </td>
+                                                <td>
+                                                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{intelligentPhone}</div>
+                                                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {countryInfo ? countryInfo.name : (lead.country || 'Inconnu')}</div>
+                                                </td>
+                                                <td>
+                                                    <div style={{ fontSize: '0.65rem', fontWeight: 900, color: isFailed ? '#94a3b8' : 'var(--accent)', textTransform: 'uppercase', marginBottom: '2px' }}>{phase}</div>
+                                                    <select value={lead.statusId} onChange={(e) => handleUpdateStatus(lead.id, e.target.value)} style={{ background: 'transparent', border: 'none', padding: 0, fontWeight: 700, color: 'white', width: '100%', fontSize: '0.85rem' }}>
+                                                        {[...statuses].sort((a, b) => a.label.localeCompare(b.label)).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <span style={{ fontWeight: 950, fontSize: '1.25rem', color: (lead.score || 0) > 40 ? 'var(--success)' : 'var(--text-muted)' }}>{lead.score || 0}</span>
+                                                </td>
+                                                <td>
+                                                    <div style={{
+                                                        background: 'rgba(255,255,255,0.02)',
+                                                        padding: '8px 12px',
+                                                        borderRadius: '12px',
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        alignItems: 'center',
+                                                        cursor: 'pointer',
+                                                        border: '1px solid rgba(255,255,255,0.05)'
+                                                    }} onClick={() => setSelectedLeadForHistory(lead)}>
+                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+                                                            {lead.notes || "Ajouter une note..."}
+                                                        </span>
+                                                        <MessageSquare size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* PAGINATION ELITE */}
+                        {/* Pagination Section */}
                         {(() => {
                             const filtered = leads.filter(l => {
-                                const matchesSearch =
-                                    (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                    (l.phone || '').includes(searchQuery);
+                                const matchesSearch = (l.firstName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.lastName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.email || '').toLowerCase().includes(searchQuery.toLowerCase()) || (l.phone || '').includes(searchQuery);
                                 const matchesStatus = filterStatus === 'all' || l.statusId === filterStatus;
                                 const matchesCountry = filterCountry === 'all' || l.country === filterCountry;
-                                const matchesCampaign = selectedCampaignTab === 'all' || l.campaignId === selectedCampaignTab;
-
-                                if (filterOnlyProblems) {
-                                    const currentAlert = aiAlerts.find(a => a.type === filterOnlyProblems) as unknown;
-                                    if (!currentAlert?.leadIds?.includes(l.id)) return false;
-                                }
-
+                                const matchesCampaign = selectedCampaignTab === 'all' || String(l.campaignId) === String(selectedCampaignTab);
                                 return matchesSearch && matchesStatus && matchesCountry && matchesCampaign;
                             });
                             const totalPages = Math.ceil(filtered.length / itemsPerPage);
+                            if (totalPages <= 1) return null;
 
                             return (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', padding: '0 1rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Afficher</span>
-                                        <select
-                                            value={itemsPerPage}
-                                            onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                                            className="input"
-                                            style={{ padding: '0 10px', borderRadius: '12px', height: '40px', minWidth: '120px', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)' }}
-                                        >
-                                            {[10, 20, 50, 100].map(v => <option key={v} value={v}>{v} par page</option>)}
-                                        </select>
-                                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>sur {filtered.length} prospects</span>
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2rem', marginTop: '3rem' }}>
+                                    <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="btn" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1.25rem', borderRadius: '14px' }}>
+                                        <ChevronLeft size={20} />
+                                    </button>
+                                    <div style={{ fontWeight: 900, fontSize: '1.1rem', color: 'white' }}>
+                                        <span style={{ color: 'var(--primary)' }}>{currentPage}</span> / {totalPages}
                                     </div>
-
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                        <button
-                                            disabled={currentPage === 1}
-                                            onClick={() => setCurrentPage(p => p - 1)}
-                                            style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: currentPage === 1 ? 'rgba(255,255,255,0.1)' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
-                                        >
-                                            <ChevronLeft size={20} />
-                                        </button>
-
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <span style={{ fontWeight: 900, color: 'var(--primary)', fontSize: '1.1rem' }}>{currentPage}</span>
-                                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>/</span>
-                                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{totalPages || 1}</span>
-                                        </div>
-
-                                        <button
-                                            disabled={currentPage === totalPages || totalPages === 0}
-                                            onClick={() => setCurrentPage(p => p + 1)}
-                                            style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: (currentPage === totalPages || totalPages === 0) ? 'rgba(255,255,255,0.1)' : 'white', cursor: (currentPage === totalPages || totalPages === 0) ? 'not-allowed' : 'pointer', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }}
-                                        >
-                                            <ChevronRight size={20} />
-                                        </button>
-                                    </div>
+                                    <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} className="btn" style={{ background: 'rgba(255,255,255,0.05)', padding: '0.75rem 1.25rem', borderRadius: '14px' }}>
+                                        <ChevronRight size={20} />
+                                    </button>
                                 </div>
                             );
                         })()}
                     </div>
                 </div>
 
-                <div style={{ padding: '2.5rem 3.5rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)' }}>
-                    <button className="btn btn-primary" style={{ padding: '1.25rem 4rem', borderRadius: '20px', fontWeight: 950, fontSize: '1.125rem' }} onClick={onClose}>Fermer le Management</button>
-
-                    {/* BARRE D'ACTION BULK (FLOTTANTE ET FIXE POUR VISIBILITÉ) */}
-                    {selectedLeadIds.length > 0 && (
-                        <div style={{
-                            position: 'fixed',
-                            bottom: '40px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: 'var(--primary)',
-                            padding: '16px 32px',
-                            borderRadius: '24px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '24px',
-                            boxShadow: '0 20px 60px rgba(99, 102, 241, 0.6)',
-                            zIndex: 2000,
-                            border: '1px solid rgba(255,255,255,0.3)',
-                            animation: 'slideUp 0.3s ease-out'
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'white', color: 'var(--primary)', display: 'grid', placeItems: 'center', fontWeight: 950, fontSize: '1rem' }}>{selectedLeadIds.length}</div>
-                                <span style={{ fontWeight: 800, fontSize: '1.1rem', color: 'white' }}>Sélectionné(s)</span>
-                            </div>
-
-                            <div style={{ height: '30px', width: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
-
-                            <div style={{ position: 'relative' }}>
-                                <button
-                                    onClick={() => setShowReassignDropdown(!showReassignDropdown)}
-                                    className="btn"
-                                    disabled={isReassigning}
-                                    style={{
-                                        background: 'white',
-                                        color: 'black',
-                                        borderRadius: '16px',
-                                        padding: '12px 24px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '12px',
-                                        fontWeight: 900,
-                                        fontSize: '1rem',
-                                        boxShadow: '0 10px 20px rgba(0,0,0,0.2)',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    {isReassigning ? <Activity className="animate-spin" size={20} /> : <UserPlus size={20} />}
-                                    {isReassigning ? 'Transfert...' : 'Lancer le transfert'} <ChevronDown size={14} />
-                                </button>
-
-                                {showReassignDropdown && (
-                                    <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '20px', width: '300px', background: '#1a1b1e', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 25px 50px rgba(0,0,0,0.7)', overflow: 'hidden' }}>
-                                        <div style={{ padding: '14px 20px', fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.03)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Choisir le destinataire</div>
-                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                            {agents.filter(a => a.id !== agent?.id).map(a => (
-                                                <button
-                                                    key={a.id}
-                                                    onClick={() => handleBulkAssign(a.id)}
-                                                    style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: 'none', color: 'white', textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
-                                                    className="reassign-option"
-                                                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
-                                                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                                                >
-                                                    <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', fontSize: '1rem', display: 'grid', placeItems: 'center', fontWeight: 900 }}>{a.name[0]}</div>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontWeight: 750, fontSize: '1rem' }}>{a.name}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.leadsAssigned} prospects en cours</div>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <div style={{ padding: '15px', background: 'rgba(0,0,0,0.2)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                            <button
-                                                style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #a855f7, #6366f1)', border: 'none', borderRadius: '15px', color: 'white', fontWeight: 950, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4)' }}
-                                                onClick={handleSmartAutoBalance}
-                                            >
-                                                <Sparkles size={18} /> Lancement IA Auto-Balance
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <button onClick={() => setSelectedLeadIds([])} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', cursor: 'pointer', width: '36px', height: '36px', borderRadius: '50%', display: 'grid', placeItems: 'center', transition: 'all 0.2s' }} onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}><X size={20} /></button>
-                        </div>
-                    )}
-                </div>
-
+                {/* MODALS & OVERLAYS */}
                 <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} />
                 <LeadHistoryModal
                     isOpen={!!selectedLeadForHistory}
@@ -1241,152 +992,82 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                             .select()
                             .single();
 
-                        if (error) {
-                            addToast("Erreur lors de l'ajout de la note", "error");
-                            throw error;
-                        }
-
+                        if (error) throw error;
                         if (interactionData) {
-                            const newInteraction = {
-                                id: interactionData.id,
-                                type: 'note',
-                                content: interactionData.content,
-                                createdAt: interactionData.created_at
-                            };
-
-                            setLeads((prev: unknown[]) => prev.map(l =>
-                                l.id === selectedLeadForHistory.id
-                                    ? { ...l, interactions: [newInteraction, ...(l.interactions || [])] }
-                                    : l
-                            ));
-
-                            // Update the local reference for the modal as well
-                            setSelectedLeadForHistory((prev: unknown) => ({
-                                ...prev,
-                                interactions: [newInteraction, ...(prev.interactions || [])]
-                            }));
-
-                            addToast("Note enregistrée avec succès", "success");
+                            const newInteraction: Interaction = { id: interactionData.id, leadId: interactionData.lead_id, agentId: interactionData.agent_id, type: 'note', content: interactionData.content, createdAt: interactionData.created_at };
+                            setLeads((prev: StudentLead[]) => prev.map(l => l.id === selectedLeadForHistory.id ? { ...l, interactions: [newInteraction, ...(l.interactions || [])] } : l));
+                            setSelectedLeadForHistory((prev: StudentLead | null) => prev ? ({ ...prev, interactions: [newInteraction, ...(prev.interactions || [])] }) : null);
+                            addToast("Note enregistrée", "success");
                         }
                     }}
                 />
 
-                {/* ELITE AI DIAGNOSTIC SIDE PANEL */}
+                {/* AI DIAGNOSTIC SIDE PANEL */}
                 <div className={`ai-side-panel ${showAiDetails ? 'open' : ''}`} onClick={e => e.stopPropagation()}>
                     <div className="ai-side-panel-header">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <div style={{ padding: '10px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', borderRadius: '12px', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)' }}>
+                            <div style={{ padding: '10px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', borderRadius: '12px' }}>
                                 <Sparkles size={20} color="white" />
                             </div>
-                            <div>
-                                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>Elite Resolution</h3>
-                                <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Diagnostic Intelligence</p>
-                            </div>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>Elite Resolution</h3>
                         </div>
-                        <button onClick={() => setShowAiDetails(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                            <X size={20} />
-                        </button>
+                        <button onClick={() => setShowAiDetails(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer' }}><X size={20} /></button>
                     </div>
 
                     <div className="ai-side-panel-content">
                         {aiAlerts.map((alert, aIdx) => (
-                            <div key={aIdx} style={{ marginBottom: '2.5rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h5 style={{ fontSize: '0.85rem', fontWeight: 900, color: alert.type === 'duplicate' ? 'var(--warning)' : alert.type === 'format' ? 'var(--accent)' : '#10b981', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                        {alert.type === 'duplicate' ? <Users size={16} /> : alert.type === 'format' ? <Zap size={16} /> : <Globe size={16} />}
-                                        {alert.type === 'duplicate' ? 'DOUBLONS DÉTECTÉS' : alert.type === 'format' ? 'ERREURS DE FORMAT' : 'UNIFORMISATION PAYS'}
-                                    </h5>
-                                    <div className={`ai-badge ${alert.type === 'duplicate' ? 'ai-badge-duplicate' : alert.type === 'format' ? 'ai-badge-format' : 'ai-badge-country'}`}>
-                                        {alert.count} cas
-                                    </div>
-                                </div>
-
-                                {alert.details?.map((detail: string, idx: number) => {
-                                    const nameMatch = detail.split('(')[0].trim();
-                                    return (
-                                        <div key={idx} className="diagnostic-card" onClick={() => {
-                                            const leadId = alert.leadIds[idx];
-                                            setHighlightedLeadId(leadId);
-                                            setTimeout(() => setHighlightedLeadId(null), 3000);
-
-                                            // On filtre le tableau pour montrer ce prospect précis si pas déjà filtré
-                                            if (!filterOnlyProblems) {
-                                                setSearchQuery(nameMatch);
-                                            }
-
-                                            const tableElement = document.querySelector('.table-container');
-                                            if (tableElement) tableElement.scrollIntoView({ behavior: 'smooth' });
-                                        }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                <div style={{ flex: 1 }}>
-                                                    <div style={{ fontWeight: 800, fontSize: '0.9rem', marginBottom: '4px' }}>{nameMatch}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>
-                                                        {detail.includes('➔') ? detail.split('(')[1].replace(')', '') : detail}
-                                                    </div>
-                                                </div>
-                                                <button style={{ background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--primary)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 800 }}>
-                                                    VOIR
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-
-                                <button
-                                    onClick={() => setFilterOnlyProblems(filterOnlyProblems === alert.type ? null : alert.type)}
-                                    style={{
-                                        marginTop: '1rem',
-                                        width: '100%',
-                                        padding: '14px',
-                                        background: filterOnlyProblems === alert.type ? 'var(--primary)' : 'rgba(99, 102, 241, 0.1)',
-                                        border: '1px solid ' + (filterOnlyProblems === alert.type ? 'var(--primary)' : 'rgba(99, 102, 241, 0.2)'),
-                                        borderRadius: '15px',
-                                        color: filterOnlyProblems === alert.type ? 'white' : 'var(--primary)',
-                                        fontSize: '0.8rem',
-                                        fontWeight: 800,
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '10px'
-                                    }}
-                                >
-                                    <Filter size={16} />
-                                    {filterOnlyProblems === alert.type ? 'DÉSACTIVER FOCUS' : `ACTIVER FOCUS SUR LES ${alert.count} CAS`}
+                            <div key={aIdx} style={{ marginBottom: '2rem' }}>
+                                <h5 style={{ fontSize: '0.85rem', fontWeight: 900, color: alert.type === 'duplicate' ? 'var(--warning)' : 'var(--accent)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {alert.type === 'duplicate' ? <Users size={16} /> : <Zap size={16} />} {alert.type.toUpperCase()} ({alert.count})
+                                </h5>
+                                {alert.details?.slice(0, 5).map((detail, idx) => (
+                                    <div key={idx} className="diagnostic-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', marginBottom: '8px', fontSize: '0.8rem' }}>{detail}</div>
+                                ))}
+                                <button onClick={() => setFilterOnlyProblems(filterOnlyProblems === alert.type ? null : alert.type)} className="btn" style={{ width: '100%', marginTop: '10px', background: filterOnlyProblems === alert.type ? 'var(--primary)' : 'rgba(99, 102, 241, 0.1)', color: 'white', borderRadius: '12px' }}>
+                                    {filterOnlyProblems === alert.type ? 'Désactiver le filtre' : 'Filtrer ces cas'}
                                 </button>
                             </div>
                         ))}
                     </div>
 
                     <div className="ai-side-panel-footer">
-                        <button
-                            onClick={handleMassHarmonize}
-                            disabled={isHarmonizing}
-                            style={{
-                                width: '100%',
-                                padding: '1.25rem',
-                                borderRadius: '18px',
-                                background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                                border: 'none',
-                                color: 'white',
-                                fontWeight: 900,
-                                fontSize: '1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '12px',
-                                boxShadow: '0 10px 25px rgba(99, 102, 241, 0.3)',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {isHarmonizing ? <Activity size={20} className="animate-spin" /> : <Sparkles size={20} />}
-                            {isHarmonizing ? 'HARMONISATION...' : 'TOUT NETTOYER MAINTENANT'}
+                        <button onClick={handleMassHarmonize} disabled={isHarmonizing} className="btn btn-primary" style={{ width: '100%', padding: '1.25rem', borderRadius: '18px', fontWeight: 900 }}>
+                            {isHarmonizing ? 'Harmonisation...' : 'Lancer le Nettoyage IA'}
                         </button>
                     </div>
+                </div>
+
+                {/* BULK ACTION BAR */}
+                {selectedLeadIds.length > 0 && (
+                    <div style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', background: 'var(--primary)', padding: '12px 24px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', zIndex: 2000 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'white', color: 'var(--primary)', display: 'grid', placeItems: 'center', fontWeight: 950 }}>{selectedLeadIds.length}</div>
+                            <span style={{ fontWeight: 800, color: 'white' }}>Sélectionnés</span>
+                        </div>
+                        <div style={{ height: '24px', width: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
+                        <div style={{ position: 'relative' }}>
+                            <button onClick={() => setShowReassignDropdown(!showReassignDropdown)} className="btn" style={{ background: 'white', color: 'black', borderRadius: '12px', padding: '10px 20px', fontWeight: 900 }}>Transferer <ChevronDown size={14} /></button>
+                            {showReassignDropdown && (
+                                <div style={{ position: 'absolute', bottom: '100%', left: '0', marginBottom: '10px', width: '250px', background: '#1a1b1e', borderRadius: '18px', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', maxHeight: '300px', overflowY: 'auto' }}>
+                                    {agents.filter(a => a.id !== agent?.id).map(a => (
+                                        <button key={a.id} onClick={() => handleBulkAssign(a.id)} style={{ width: '100%', padding: '12px 20px', background: 'transparent', border: 'none', color: 'white', textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 600 }}>{a.name}</button>
+                                    ))}
+                                    <button onClick={handleSmartAutoBalance} style={{ width: '100%', padding: '15px', background: 'var(--accent)', border: 'none', color: 'white', fontWeight: 900 }}>IA Auto-Balance</button>
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={() => setSelectedLeadIds([])} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}><X size={16} /></button>
+                    </div>
+                )}
+
+                {/* FINAL ACTIONS */}
+                <div style={{ padding: '2rem 3rem', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.1)' }}>
+                    <button className="btn" style={{ padding: '1rem 3rem', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800 }} onClick={onClose}>Fermer</button>
                 </div>
             </div>
         </div>
     );
 };
+
 
 export default AgentStatsModal;

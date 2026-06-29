@@ -20,7 +20,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
 
     React.useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        (supabase.auth as any).getSession().then(({ data: { session } }: any) => {
             if (session?.user) {
                 setHasSession(true);
                 // Only auto-fill if we are actually in registration flow
@@ -69,7 +69,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
             return;
         }
 
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await (supabase.auth as any).signInWithPassword({ email, password });
         if (error) {
             addToast((error as Error).message, 'error');
             setIsLoading(false);
@@ -108,11 +108,11 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
         setIsLoading(true);
         try {
             // 1. Mise à jour Auth Supabase
-            const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+            const { error: authError } = await (supabase.auth as any).updateUser({ password: newPassword });
             if (authError) throw authError;
 
             // 2. Mise à jour Profil (Valider le changement)
-            const { data: { user } } = await supabase.auth.getUser();
+            const { data: { user } } = await (supabase.auth as any).getUser();
             if (user) {
                 const { error: profileError } = await supabase
                     .from('profiles')
@@ -152,7 +152,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
             }
 
             // 2. Envoi de l'email de secours 📧
-            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+            const { error: resetError } = await (supabase.auth as any).resetPasswordForEmail(email, {
                 redirectTo: window.location.origin
             });
 
@@ -177,7 +177,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
         try {
             let userId = '';
             let orgId = '';
-            const { data: { session: existingSession } } = await supabase.auth.getSession();
+            const { data: { session: existingSession } } = await (supabase.auth as any).getSession();
             console.log("Onboarding session:", existingSession);
 
             // 1. Auth User
@@ -186,7 +186,7 @@ const Auth: React.FC<AuthProps> = ({ initialMode = 'login' }) => {
                 console.log("Using existing user ID:", userId);
             } else {
                 console.log("Signing up new admin:", email);
-                const { data: authData, error: authError } = await supabase.auth.signUp({
+                const { data: authData, error: authError } = await (supabase.auth as any).signUp({
                     email,
                     password,
                     options: { data: { full_name: fullName, role: 'admin' } }

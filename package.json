@@ -4,19 +4,19 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "node node_modules/vite/bin/vite.js",
+    "build": "node D:/npm-global/node_modules/typescript/lib/tsc.js -b && node node_modules/vite/bin/vite.js build",
+    "lint": "node node_modules/eslint/bin/eslint.js .",
+    "preview": "node node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.0",
     "clsx": "^2.1.1",
     "libphonenumber-js": "^1.12.36",
     "lucide-react": "^0.563.0",
-    "puppeteer": "^24.39.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router-dom": "^7.18.0",
     "tailwind-merge": "^3.4.0",
     "xlsx": "^0.18.5"
   },
@@ -30,7 +30,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "typescript": "~5.9.3",
+    "typescript": "~5.5.4",
     "typescript-eslint": "^8.48.0",
     "vite": "^7.3.1"
   }

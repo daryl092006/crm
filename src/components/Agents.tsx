@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { UserSquare2, TrendingUp, Award, MoreVertical, Trash2 } from 'lucide-react';
 import { usePopup } from './Popup';
-import type { Agent, Campaign } from '../types';
+import type { Agent, Campaign, UserRole } from '../types';
 import { useToast } from './Toast';
 import AgentStatsModal from './AgentStatsModal';
 import AddAgentModal from './AddAgentModal';
 import InvitationsManagerModal from './InvitationsManagerModal';
 import { supabase } from '../supabaseClient';
+import { notifyAgentAccess } from '../utils/emailNotificationService';
 
 interface AgentsProps {
     profile: import('../types').Profile | null;
@@ -86,25 +87,26 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
     };
 
 
-    const handleAddAgent = async (fullName: string, email: string) => {
+    const handleAddAgent = async (fullName: string, email: string, role: UserRole = 'agent') => {
         try {
             if (!profile?.organization_id) throw new Error("ID d'organisation introuvable");
 
-            addToast(`🚀 Création immédiate pour ${fullName}...`, "info");
+            addToast(`Création en cours pour ${fullName}...`, "info");
 
-            const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5emd4aGZ3dXhwdm5veHZzY2JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDgzMjgsImV4cCI6MjA4ODcyNDMyOH0.raMGoau9uxCzHzQlIqrDMIEbwXp8QHJ6ZvCjuCgAPyY';
+            // Récupère le token JWT de la session active de l'utilisateur connecté
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) throw new Error("Session expirée, veuillez vous reconnecter.");
 
-            // --- APPEL "BYPASS" (Utilise la clé anon comme jeton maître) ---
             const response = await fetch('https://ryzgxhfwuxpvnoxvscbk.supabase.co/functions/v1/create-agent', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${anonKey}`,
-                    'apikey': anonKey
+                    'Authorization': `Bearer ${session.access_token}`
                 },
                 body: JSON.stringify({
                     fullName,
                     email: email.trim(),
+                    role,           // Transmet le rôle choisi (TASK-DB-001)
                     organizationId: profile.organization_id
                 })
             });
@@ -129,12 +131,12 @@ const Agents: React.FC<AgentsProps> = ({ profile, agents, leads, setLeads, campa
 
     return (
         <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <div>
-                    <h1 style={{ fontSize: '1.875rem', fontWeight: 700 }}>Équipe de Conseillers</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ minWidth: 0 }}>
+                    <h1 style={{ fontSize: 'clamp(1.375rem, 3.5vw, 1.875rem)', fontWeight: 700 }}>Équipe de Conseillers</h1>
                     <p style={{ color: 'var(--text-muted)' }}>Gérez les performances et l'attribution des prospects.</p>
                 </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', gap: '0.75rem', flexShrink: 0 }}>
                     <button
                         onClick={() => setIsAddModalOpen(true)}
                         className="btn btn-primary"

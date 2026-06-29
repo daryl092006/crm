@@ -5,10 +5,14 @@ import Campaigns from './components/Campaigns'
 import Agents from './components/Agents'
 import Settings from './components/Settings'
 import ProfileComponent from './components/Profile'
+import FollowUps from './components/FollowUps'
 import Pipeline from './components/Pipeline'
 import Leads from './components/Leads'
+import AuditLogs from './components/AuditLogs'
+import RequirePermission from './components/RequirePermission'
+import { EmailCampaigns } from './components/EmailCampaigns'
 import { supabase } from './supabaseClient'
-import type { StudentLead, Campaign, Agent, LeadStatus, Profile } from './types'
+import type { StudentLead, Campaign, Agent, LeadStatus, Profile, Program, ProspectClassification, ProspectSource, MessageTemplate, FollowUpScenario } from './types'
 import './index.css'
 import { ToastProvider } from './components/Toast'
 import OnboardingTour from './components/OnboardingTour'
@@ -16,38 +20,143 @@ import { Login } from './components/Login'
 import { PopupProvider } from './components/Popup'
 import { Menu, X, Target } from 'lucide-react';
 import ActivateAccount from './components/ActivateAccount';
+import { ResetPassword } from './components/ResetPassword';
+import { Routes, Route, useNavigate, Navigate, Outlet, useOutletContext } from 'react-router-dom';
 
+// ─── Types du contexte partagé via Outlet ───────────────────────────────────
+export interface AppContextType {
+  leads: StudentLead[];
+  campaigns: Campaign[];
+  agents: Agent[];
+  statuses: LeadStatus[];
+  programs: Program[];
+  classifications: ProspectClassification[];
+  sources: ProspectSource[];
+  messageTemplates: MessageTemplate[];
+  followUpScenarios: FollowUpScenario[];
+  profile: Profile | null;
+  selectedCampaignId: string;
+  setSelectedCampaignId: (id: string) => void;
+  statusFilter: string;
+  setStatusFilter: (f: string) => void;
+  handleUpdateLeads: (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => void;
+  fetchData: () => Promise<void>;
+  setCampaigns: React.Dispatch<React.SetStateAction<Campaign[]>>;
+}
+
+// Hook pratique pour consommer le contexte dans les pages
+export function useAppContext() {
+  return useOutletContext<AppContextType>();
+}
+
+// ─── Layout protégé (Sidebar + Header mobile + <Outlet />) ──────────────────
+function AppLayout({ ctx }: { ctx: AppContextType }) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    localStorage.getItem('crm_sidebar_collapsed') === 'true'
+  );
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('crm_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <OnboardingTour />
+
+      {/* MOBILE HEADER */}
+      <div className="mobile-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+            borderRadius: '8px',
+            display: 'grid',
+            placeItems: 'center'
+          }}>
+            <Target size={18} color="white" />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>ESCEN CRM</h2>
+        </div>
+        <button
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+        >
+          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
+
+      {/* OVERLAY MOBILE */}
+      <div
+        className={`overlay ${isSidebarOpen ? 'show' : ''}`}
+        onClick={() => setIsSidebarOpen(false)}
+      />
+
+      <div className="app-container">
+        <div 
+          className={`sidebar ${isSidebarOpen ? 'open' : ''} ${isSidebarCollapsed ? 'collapsed' : ''}`}
+          style={{
+            width: isSidebarCollapsed ? '80px' : '280px',
+            padding: isSidebarCollapsed ? '2.5rem 0.75rem' : '2.5rem 1.5rem',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          <Sidebar
+            profile={ctx.profile}
+            onNavigate={() => setIsSidebarOpen(false)}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
+          />
+        </div>
+
+        <main 
+          className="main-content"
+          style={{
+            marginLeft: isSidebarCollapsed ? '80px' : '280px',
+            transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          <Outlet context={ctx} />
+        </main>
+      </div>
+    </>
+  );
+}
+
+// ─── Composant principal App ─────────────────────────────────────────────────
 function App() {
+  const navigate = useNavigate();
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token');
-    if (t) setToken(t);
-  }, []);
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('crm_active_tab') || 'dashboard')
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false) // New state for sidebar visibility
-
-  useEffect(() => {
-    localStorage.setItem('crm_active_tab', activeTab);
-  }, [activeTab]);
-
-  // New useEffect to close sidebar on mobile when activeTab changes
-  useEffect(() => {
-    if (window.innerWidth < 768) { // Assuming 768px is the breakpoint for mobile
-      setIsSidebarOpen(false);
+    if (t) {
+      setToken(t);
+      navigate('/activate');
     }
-  }, [activeTab]);
+  }, [navigate]);
 
   const [leads, setLeads] = useState<StudentLead[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [statuses, setStatuses] = useState<LeadStatus[]>([])
+  const [programs, setPrograms] = useState<Program[]>([])
+  const [classifications, setClassifications] = useState<ProspectClassification[]>([])
+  const [sources, setSources] = useState<ProspectSource[]>([])
+  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([])
+  const [followUpScenarios, setFollowUpScenarios] = useState<FollowUpScenario[]>([])
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+
   const [selectedCampaignId, setSelectedCampaignId] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 
   useEffect(() => {
     // Safety timeout: stop loading after 6 seconds even if something hangs
@@ -59,53 +168,56 @@ function App() {
     fetchData();
 
     // --- AUTH STATE LISTENER ---
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = (supabase.auth as any).onAuthStateChange((event: any) => {
       console.log("Auth event:", event);
-      if (['SIGNED_IN', 'SIGNED_OUT', 'USER_UPDATED', 'TOKEN_REFRESHED'].includes(event)) {
+      if (event === 'PASSWORD_RECOVERY') {
+        navigate('/reset-password');
+      } else if (event === 'SIGNED_OUT') {
         fetchData();
+      } else if (event === 'SIGNED_IN') {
+        fetchData();
+        // Only redirect to dashboard if coming from login page — never interrupt an active session
+        const isOnLoginPage = ['/login', '/'].includes(window.location.pathname) && !profile;
+        if (isOnLoginPage) navigate('/');
       }
     });
 
-    // --- REALTIME SUBSCRIPTION ---
-    // Listen for changes in the database and refresh data automatically
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leads' },
-        () => fetchData()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'campaigns' },
-        () => fetchData()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles' },
-        () => fetchData()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'lead_statuses' },
-        () => fetchData()
-      )
-      .subscribe()
+    // --- STABLE FOCUS & VISIBILITY REFRESH ---
+    let lastFetchTime = Date.now();
+
+    const handleWindowFocus = () => {
+      const now = Date.now();
+      if (now - lastFetchTime > 20000) {
+        lastFetchTime = now;
+        console.log("Window focused/visible, refreshing data...");
+        fetchData();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleWindowFocus();
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
-      supabase.removeChannel(channel);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleWindowFocus);
       clearTimeout(timeout);
     }
   }, [])
 
 
   const fetchData = async () => {
-    setLoading(true)
+    if (!hasLoadedOnce) {
+      setLoading(true);
+    }
     console.log("--- Fetching CRM Data (Direct Access) ---");
     try {
       // 1. Get Session
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await (supabase.auth as any).getSession();
 
       if (!session) {
         setProfile(null);
@@ -122,7 +234,6 @@ function App() {
 
       if (profileError || !profileData) {
         console.error("Profile fetch error:", profileError);
-        // If no profile but auth exists, we might need to sign out or show error
         setProfile(null);
         setLoading(false);
         return;
@@ -138,12 +249,12 @@ function App() {
         must_change_password: profileData.must_change_password
       });
 
-      // If password change is required, force redirect to profile tab
+      // If password change is required, force redirect to profile
       if (profileData.must_change_password) {
-        setActiveTab('profile');
+        navigate('/profile');
       }
 
-      // 1. Fetch Statuses (renumbered internal steps)
+      // 1. Fetch Statuses
       const { data: statusesData } = await supabase.from('lead_statuses').select('*').order('label');
       if (statusesData) {
         setStatuses(statusesData.map(s => ({
@@ -159,10 +270,78 @@ function App() {
       const { data: leadsData } = await supabase.from('leads').select('*, lead_interactions(*)').order('created_at', { ascending: false });
       const { data: campaignsData } = await supabase.from('campaigns').select('*');
       const { data: agentsData } = await supabase.from('profiles').select('*');
+      const { data: programsData } = await supabase.from('programs').select('*').eq('is_active', true);
+      const { data: classificationsData } = await supabase.from('prospect_classifications').select('*').eq('is_active', true).order('sort_order');
+      const { data: sourcesData } = await supabase.from('prospect_sources').select('*').eq('is_active', true);
+      const { data: templatesData } = await supabase.from('messaging_templates').select('*');
+      const { data: scenariosData } = await supabase.from('follow_up_scenarios').select('*');
+
+      if (templatesData) setMessageTemplates(templatesData.map(t => ({
+        id: t.id,
+        title: t.title,
+        content: t.content,
+        category: t.category,
+        subject: t.subject,
+        description: t.description,
+        campaign_id: t.campaign_id,
+        program_id: t.program_id,
+        source_id: t.source_id,
+        status_id: t.status_id,
+        is_active: t.is_active !== false,
+        is_default: t.is_default === true,
+        organization_id: t.organization_id,
+        metadata: t.metadata,
+        created_at: t.created_at
+      })));
+
+      if (scenariosData) setFollowUpScenarios(scenariosData.map(s => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        trigger_type: s.trigger_type,
+        delay_days: s.delay_days,
+        channel: s.channel,
+        template_id: s.template_id,
+        is_active: s.is_active !== false,
+        campaign_id: s.campaign_id,
+        organization_id: s.organization_id,
+        created_by: s.created_by,
+        created_at: s.created_at,
+        updated_at: s.updated_at
+      })));
+
+      if (programsData) setPrograms(programsData.map(p => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        description: p.description,
+        level: p.level,
+        department: p.department,
+        isActive: p.is_active
+      })));
+
+      if (classificationsData) setClassifications(classificationsData.map(c => ({
+        id: c.id,
+        name: c.name,
+        code: c.code,
+        description: c.description,
+        color: c.color,
+        sortOrder: c.sort_order,
+        isActive: c.is_active,
+        isDefault: c.is_default
+      })));
+
+      if (sourcesData) setSources(sourcesData.map(s => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        description: s.description,
+        isActive: s.is_active
+      })));
 
       // 4. Map Leads & Interactions
       if (leadsData) {
-        setLeads(leadsData.map((l: any) => ({
+        setLeads((leadsData as any[]).map((l) => ({
           id: l.id,
           organizationId: l.organization_id,
           campaignId: l.campaign_id,
@@ -172,15 +351,20 @@ function App() {
           lastName: l.last_name,
           email: l.email,
           phone: l.phone,
+          whatsapp: l.whatsapp,
           country: l.country,
           city: l.city,
           fieldOfInterest: l.field_of_interest,
           level: l.study_level,
+          source: l.source,
           score: l.score || 0,
           notes: l.notes,
           metadata: l.metadata,
           lastInteractionAt: l.last_interaction_at,
           createdAt: l.created_at,
+          programId: l.program_id,
+          classificationId: l.classification_id,
+          sourceId: l.source_id,
           status: (statusesData || []).find(s => s.id === l.status_id),
           interactions: (l.lead_interactions || []).map((i: any) => {
             const interactionType = ({
@@ -189,7 +373,7 @@ function App() {
               'SMS': 'sms',
               'Verify': 'note',
               'Confirm': 'note'
-            } as any)[i.type] || i.type; // Fallback to original type if not found
+            } as Record<string, string>)[i.type] || i.type;
             return {
               id: i.id,
               leadId: i.lead_id,
@@ -218,7 +402,7 @@ function App() {
         { id: 'refus_categorique', label: 'Refus catégorique', color: '#ef4444', sort_order: 12 },
         { id: 'inscrit_ailleurs', label: 'Inscrit ailleurs', color: '#44403c', sort_order: 13 },
         { id: 'pas_moyens', label: 'Pas les moyens', color: '#44403c', sort_order: 14 },
-        { id: 'annee_prochaine', label: 'S’inscrire l’année prochaine', color: '#44403c', sort_order: 15 },
+        { id: 'annee_prochaine', label: "S'inscrire l'année prochaine", color: '#44403c', sort_order: 15 },
         { id: 'pas_disponible', label: 'Pas disponible / contrainte de temps', color: '#44403c', sort_order: 16 },
         { id: 'hors_cible', label: 'Hors cible', color: '#44403c', sort_order: 17 },
         { id: 'refus_repondre', label: 'Refus de répondre', color: '#44403c', sort_order: 18 },
@@ -230,14 +414,11 @@ function App() {
 
       const allowedIds = requiredStatuses.map(rs => rs.id);
 
-      // Delete any status in DB that is NOT in our required list
       const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
       if (toDelete.length > 0) {
         console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
         await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
 
-        // ROADMAP REPAIR: Move all leads with "illegal" statuses back to 'nouveau'
-        // This fixes why the user was still seeing old labels
         await supabase.from('leads')
           .update({ status_id: 'nouveau' })
           .not('status_id', 'in', `(${allowedIds.join(',')})`);
@@ -258,7 +439,6 @@ function App() {
         })));
       }
 
-      // Always re-fetch to ensure perfect sync
       const { data: finalStatuses } = await supabase.from('lead_statuses').select('*').order('sort_order');
       if (finalStatuses) {
         setStatuses(finalStatuses
@@ -273,23 +453,27 @@ function App() {
         );
       }
 
-      if (campaignsData) setCampaigns(campaignsData.map((c: any) => ({
+      if (campaignsData) setCampaigns((campaignsData as any[]).map((c) => ({
         id: c.id,
         organizationId: c.organization_id,
         name: c.name,
+        description: c.description,
         source: c.source,
-        budget: c.budget, // Correction de l'ancienne erreur (c.budget instead of c.budget)
+        budget: c.budget,
         startDate: c.start_date,
         endDate: c.end_date,
-        isActive: c.is_active,
-        column_mappings: c.column_mappings
+        status: c.status || 'draft',
+        isActive: c.status === 'active',
+        column_mappings: c.column_mappings,
+        archivedAt: c.archived_at,
+        objective: c.objective,
+        metadata: c.metadata
       })));
 
-      if (agentsData) setAgents(agentsData.filter((a: any) => a.id !== '00000000-0000-0000-0000-000000000000' && a.role !== 'admin').map((a: any): Agent => {
-        const agentLeads = (leadsData || []).filter((l: any) => l.agent_id === a.id);
+      if (agentsData) setAgents((agentsData as any[]).filter((a) => a.id !== '00000000-0000-0000-0000-000000000000' && a.role !== 'admin').map((a): Agent => {
+        const agentLeads = (leadsData || []).filter((l) => (l as any).agent_id === a.id);
         const assignedCount = agentLeads.length;
 
-        // CALCUL HARMONISÉ (Identique au AgentStatsModal)
         const contactedCount = agentLeads.filter(l => {
           const sid = (l.status_id || '').toLowerCase();
           return sid !== 'nouveau' && sid !== '';
@@ -310,7 +494,6 @@ function App() {
 
         const responseTimes = agentLeads.map((l: any) => {
           if (!l.lead_interactions || l.lead_interactions.length === 0) return null;
-          // Filter for real contact interactions, not just notes if possible, but let's take any first interaction for now
           const interactions = l.lead_interactions.filter((i: any) => ['call', 'whatsapp', 'sms'].includes(i.type));
           if (interactions.length === 0) return null;
 
@@ -343,6 +526,7 @@ function App() {
       }))
 
       console.log("Fetch success: Leads:", leadsData?.length, "Campaigns:", campaignsData?.length, "Agents:", agentsData?.length);
+      setHasLoadedOnce(true);
     } catch (err) {
       console.error("Fetch error:", err);
     } finally {
@@ -350,21 +534,13 @@ function App() {
     }
   }
 
-
   const handleUpdateLeads = async (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
     if (typeof newLeads === 'function') setLeads(newLeads(leads));
     else setLeads(newLeads);
   }
 
-  if (token) {
-    return (
-      <ToastProvider>
-        <ActivateAccount />
-      </ToastProvider>
-    );
-  }
-
-  if (loading) {
+  // Loader plein écran uniquement au premier chargement
+  if (loading && !hasLoadedOnce && leads.length === 0) {
     return (
       <div className="loading-screen">
         <div className="loader-container">
@@ -377,93 +553,149 @@ function App() {
     );
   }
 
+  // Contexte partagé passé à toutes les routes via Outlet
+  const ctx: AppContextType = {
+    leads,
+    campaigns,
+    agents,
+    statuses,
+    programs,
+    classifications,
+    sources,
+    messageTemplates,
+    followUpScenarios,
+    profile,
+    selectedCampaignId,
+    setSelectedCampaignId,
+    statusFilter,
+    setStatusFilter,
+    handleUpdateLeads,
+    fetchData,
+    setCampaigns,
+  };
+
   return (
     <ToastProvider>
       <PopupProvider>
-        <OnboardingTour />
+        <Routes>
+          {/* ── Routes publiques ── */}
+          <Route path="/reset-password" element={<ResetPassword onComplete={() => navigate('/login')} />} />
+          <Route path="/activate" element={<ActivateAccount />} />
+          <Route path="/login" element={!profile ? <Login /> : <Navigate to="/" />} />
 
-        {/* MOBILE HEADER */}
-        <div className="mobile-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-              borderRadius: '8px',
-              display: 'grid',
-              placeItems: 'center'
-            }}>
-              <Target size={18} color="white" />
-            </div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>ESCEN CRM</h2>
-          </div>
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}
+          {/* ── Routes protégées avec layout ── */}
+          <Route
+            path="/"
+            element={!profile ? <Navigate to="/login" /> : <AppLayout ctx={ctx} />}
           >
-            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-        </div>
-
-        {/* OVERLAY FOR MOBILE */}
-        <div
-          className={`overlay ${isSidebarOpen ? 'show' : ''}`}
-          onClick={() => setIsSidebarOpen(false)}
-        />
-
-        <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-          <Sidebar
-            activeTab={activeTab}
-            setActiveTab={(tab) => {
-              setActiveTab(tab);
-              setIsSidebarOpen(false);
-            }}
-            profile={profile}
-          />
-        </div>
-
-        <main className="main-content">
-          {activeTab === 'dashboard' && (
-            <Dashboard
-              leads={leads}
-              campaigns={campaigns}
-              statuses={statuses}
-              setActiveTab={setActiveTab}
-              setStatusFilter={setStatusFilter}
-              selectedCampaignId={selectedCampaignId}
-              setSelectedCampaignId={setSelectedCampaignId}
-              profile={profile}
-            />
-          )}
-          {activeTab === 'pipeline' && (
-            <Pipeline
-              profile={profile}
-              leads={leads}
-              setLeads={handleUpdateLeads as any}
-              campaigns={campaigns}
-              agents={agents}
-              statuses={statuses}
-            />
-          )}
-          {activeTab === 'leads' && (
-            <Leads
-              leads={leads}
-              statuses={statuses}
-              campaigns={campaigns}
-              onRefresh={fetchData}
-              profile={profile}
-            />
-          )}
-          {activeTab === 'campaigns' && <Campaigns profile={profile} campaigns={campaigns} setCampaigns={setCampaigns} leads={leads} setLeads={handleUpdateLeads as any} agents={agents} onRefresh={fetchData} />}
-          {activeTab === 'agents' && <Agents profile={profile} agents={agents} leads={leads} setLeads={handleUpdateLeads as any} campaigns={campaigns} statuses={statuses} onRefresh={fetchData} />}
-
-
-          {activeTab === 'settings' && <Settings />}
-          {activeTab === 'profile' && <ProfileComponent profile={profile} leads={leads} statuses={statuses} onUpdate={fetchData} />}
-
-          {!profile && <Login />}
-
-        </main>
+            <Route index element={
+              <Dashboard
+                leads={leads}
+                campaigns={campaigns}
+                statuses={statuses}
+                setActiveTab={(tab) => {
+                  // Compatibilité : Dashboard utilise encore setActiveTab pour naviguer
+                  const routes: Record<string, string> = {
+                    leads: '/leads', pipeline: '/pipeline', campaigns: '/campaigns',
+                    followups: '/followups', agents: '/agents', settings: '/settings',
+                    profile: '/profile', auditlogs: '/audit-logs', email_campaigns: '/email-campaigns'
+                  };
+                  navigate(routes[tab] || '/');
+                }}
+                setStatusFilter={setStatusFilter}
+                selectedCampaignId={selectedCampaignId}
+                setSelectedCampaignId={setSelectedCampaignId}
+                profile={profile}
+              />
+            } />
+            <Route path="leads" element={
+              <Leads
+                leads={leads}
+                statuses={statuses}
+                campaigns={campaigns}
+                agents={agents}
+                onRefresh={fetchData}
+                profile={profile}
+                initialStatusFilter={statusFilter}
+                onFilterChange={setStatusFilter}
+                initialCampaignFilter={selectedCampaignId}
+                onCampaignChange={setSelectedCampaignId}
+                programs={programs}
+                classifications={classifications}
+                sources={sources}
+                messageTemplates={messageTemplates}
+              />
+            } />
+            <Route path="pipeline" element={
+              <Pipeline
+                profile={profile}
+                leads={leads}
+                setLeads={handleUpdateLeads}
+                campaigns={campaigns}
+                agents={agents}
+                statuses={statuses}
+                programs={programs}
+                classifications={classifications}
+                sources={sources}
+              />
+            } />
+            <Route path="campaigns" element={
+              <RequirePermission role={profile?.role} allowedRoles={['admin', 'superagent']}>
+                <Campaigns
+                  profile={profile}
+                  campaigns={campaigns}
+                  setCampaigns={setCampaigns}
+                  leads={leads}
+                  setLeads={handleUpdateLeads}
+                  agents={agents}
+                  onRefresh={fetchData}
+                />
+              </RequirePermission>
+            } />
+            <Route path="email-campaigns" element={
+              <RequirePermission role={profile?.role} allowedRoles={['admin', 'superagent', 'direction', 'superviseur']}>
+                <EmailCampaigns profile={profile} />
+              </RequirePermission>
+            } />
+            <Route path="followups" element={
+              <FollowUps
+                profile={profile}
+                agents={agents}
+                leads={leads}
+                onRefresh={fetchData}
+              />
+            } />
+            <Route path="agents" element={
+              <RequirePermission role={profile?.role} allowedRoles={['admin', 'superagent']}>
+                <Agents
+                  profile={profile}
+                  agents={agents}
+                  leads={leads}
+                  setLeads={handleUpdateLeads}
+                  campaigns={campaigns}
+                  statuses={statuses}
+                  onRefresh={fetchData}
+                />
+              </RequirePermission>
+            } />
+            <Route path="audit-logs" element={
+              <RequirePermission role={profile?.role} allowedRoles={['admin', 'superagent', 'direction', 'superviseur']}>
+                <AuditLogs profile={profile} agents={agents} />
+              </RequirePermission>
+            } />
+            <Route path="settings" element={<Settings />} />
+            <Route path="profile" element={
+              <ProfileComponent
+                profile={profile}
+                leads={leads}
+                statuses={statuses}
+                onUpdate={fetchData}
+              />
+            } />
+            {/* Fallback → Dashboard */}
+            <Route path="*" element={<Navigate to="/" />} />
+          </Route>
+        </Routes>
       </PopupProvider>
     </ToastProvider>
   );

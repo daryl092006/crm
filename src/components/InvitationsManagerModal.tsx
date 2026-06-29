@@ -1,13 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { X, Mail, Clock, CheckCircle2, RefreshCw, Trash2, Shield } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useToast } from './Toast';
 import { usePopup } from './Popup';
+import type { UserRole } from '../types';
+
+// Libellés lisibles par l'humain pour chaque rôle
+const ROLE_LABELS: Record<UserRole, string> = {
+    admin: 'Administrateur',
+    direction: 'Direction',
+    superagent: 'Responsable comm.',
+    agent: 'Agent',
+    superviseur: 'Superviseur',
+};
 
 interface Invitation {
     id: string;
     email: string;
-    role: 'admin' | 'agent';
+    role: UserRole;
     status: 'pending' | 'accepted' | 'expired';
     created_at: string;
 }
@@ -23,7 +33,7 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
     const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const fetchInvitations = async () => {
+    const fetchInvitations = useCallback(async () => {
         setLoading(true);
         try {
             const { data, error } = await supabase
@@ -38,12 +48,11 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
         } finally {
             setLoading(false);
         }
-    };
+    }, [addToast]);
 
     useEffect(() => {
         if (isOpen) fetchInvitations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isOpen]);
+    }, [isOpen, fetchInvitations]);
 
     const deleteInvitation = async (id: string) => {
         const confirmed = await showConfirm("Supprimer l'invitation", "Êtes-vous sûr de vouloir annuler cette invitation ? L'utilisateur ne pourra plus s'inscrire avec ce lien.", "error");
@@ -111,7 +120,7 @@ const InvitationsManagerModal: React.FC<InvitationsManagerModalProps> = ({ isOpe
                                             <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                                 {inv.email}
                                                 <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                                                    {inv.role}
+                                                    {ROLE_LABELS[inv.role] ?? inv.role}
                                                 </span>
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>

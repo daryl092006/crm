@@ -26,13 +26,28 @@ const AVAILABLE_FIELDS = [
 interface AddCampaignModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (campaignData: { name: string; source: string; column_mappings: ColumnMapping[] }) => Promise<void>;
+    onSave: (campaignData: { 
+        name: string; 
+        source: string; 
+        description?: string;
+        status: string;
+        start_date?: string;
+        end_date?: string;
+        objective?: number;
+        column_mappings: ColumnMapping[] 
+    }) => Promise<void>;
 }
+
 
 const AddCampaignModal: React.FC<AddCampaignModalProps> = ({ isOpen, onClose, onSave }) => {
     const [step, setStep] = useState(1);
     const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
     const [source, setSource] = useState('Facebook');
+    const [status, setStatus] = useState('active');
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState('');
+    const [objective, setObjective] = useState<number>(0);
     const [mappings, setMappings] = useState<ColumnMapping[]>([
         { field: 'firstName', label: 'Prénom' },
         { field: 'lastName', label: 'Nom' },
@@ -41,6 +56,7 @@ const AddCampaignModal: React.FC<AddCampaignModalProps> = ({ isOpen, onClose, on
     ]);
     const [loading, setLoading] = useState(false);
 
+
     if (!isOpen) return null;
 
     const handleNext = () => setStep(2);
@@ -48,11 +64,42 @@ const AddCampaignModal: React.FC<AddCampaignModalProps> = ({ isOpen, onClose, on
 
     const handleSubmit = async () => {
         if (!name || mappings.length === 0) return;
+
+        // Vérification : pas de labels en double
+        const labels = mappings.map(m => m.label.trim().toLowerCase());
+        const duplicates = labels.filter((l, i) => labels.indexOf(l) !== i);
+        if (duplicates.length > 0) {
+            alert(`Colonnes en double détectées : "${duplicates.join('", "')}". Chaque colonne doit avoir un nom unique.`);
+            return;
+        }
+
+        // Vérification : pas de champs CRM en double (sauf custom)
+        const fields = mappings.map(m => m.field).filter(f => f !== 'unnamed_field' && !f.startsWith('custom'));
+        const dupFields = fields.filter((f, i) => fields.indexOf(f) !== i);
+        if (dupFields.length > 0) {
+            alert(`La même donnée CRM est mappée plusieurs fois. Vérifiez vos colonnes.`);
+            return;
+        }
+
         setLoading(true);
         try {
-            await onSave({ name, source, column_mappings: mappings });
+            await onSave({ 
+                name, 
+                source, 
+                description,
+                status,
+                start_date: startDate ? new Date(startDate).toISOString() : undefined,
+                end_date: endDate ? new Date(endDate).toISOString() : undefined,
+                objective: objective || 0,
+                column_mappings: mappings 
+            });
             setName('');
+            setDescription('');
             setSource('Facebook');
+            setStatus('active');
+            setStartDate(new Date().toISOString().split('T')[0]);
+            setEndDate('');
+            setObjective(0);
             setMappings([
                 { field: 'firstName', label: 'Prénom' },
                 { field: 'lastName', label: 'Nom' },
@@ -104,30 +151,87 @@ const AddCampaignModal: React.FC<AddCampaignModalProps> = ({ isOpen, onClose, on
 
                 <div style={{ flex: 1, overflowY: 'auto', padding: '2rem' }}>
                     {step === 1 ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                             <div className="form-group">
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>Nom de la Campagne</label>
+                                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Nom de la Campagne *</label>
                                 <input 
                                     type="text" 
                                     className="input-field" 
                                     value={name} 
                                     onChange={(e) => setName(e.target.value)}
                                     placeholder="ex: Campagne Sénégal Printemps 2024"
-                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
                                 />
                             </div>
+                            
                             <div className="form-group">
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 600 }}>Source Marketing</label>
-                                <select 
-                                    className="input-field" 
-                                    value={source} 
-                                    onChange={(e) => setSource(e.target.value)}
-                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
-                                >
-                                    {['Facebook', 'TikTok', 'Instagram', 'Salon', 'Google', 'Autre'].map(s => <option key={s} value={s} style={{background: '#1a1b1e'}}>{s}</option>)}
-                                </select>
+                                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Description</label>
+                                <textarea 
+                                    value={description} 
+                                    onChange={(e) => setDescription(e.target.value)}
+                                    placeholder="Description des filières ciblées ou notes de campagne..."
+                                    style={{ width: '100%', minHeight: '80px', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white', resize: 'none' }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Source Marketing</label>
+                                    <select 
+                                        value={source} 
+                                        onChange={(e) => setSource(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                    >
+                                        {['Facebook', 'TikTok', 'Instagram', 'Salon', 'Google', 'Autre'].map(s => <option key={s} value={s} style={{background: '#1a1b1e'}}>{s}</option>)}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Statut Initial</label>
+                                    <select 
+                                        value={status} 
+                                        onChange={(e) => setStatus(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                    >
+                                        <option value="active" style={{background: '#1a1b1e'}}>Actif (En cours)</option>
+                                        <option value="draft" style={{background: '#1a1b1e'}}>Brouillon</option>
+                                        <option value="paused" style={{background: '#1a1b1e'}}>Suspendu</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Date de Début</label>
+                                    <input 
+                                        type="date" 
+                                        value={startDate} 
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Date de Fin</label>
+                                    <input 
+                                        type="date" 
+                                        value={endDate} 
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.875rem', fontWeight: 600 }}>Objectif (Nb prospects cibles)</label>
+                                <input 
+                                    type="number" 
+                                    value={objective || ''} 
+                                    onChange={(e) => setObjective(parseInt(e.target.value) || 0)}
+                                    placeholder="ex: 150"
+                                    style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                />
                             </div>
                         </div>
+
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             <div style={{ padding: '1rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.2)', marginBottom: '1rem', display: 'flex', gap: '12px' }}>

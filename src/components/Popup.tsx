@@ -142,6 +142,7 @@ export const PopupProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                             max-width: 400px;
                             border-radius: 20px;
                             padding: 1.5rem;
+                            background: #0f0f11;
                             border: 1px solid rgba(255, 255, 255, 0.1);
                         }
                         .popup-header {

@@ -31,7 +31,7 @@ const Messaging: React.FC<MessagingProps> = ({ profile, leads, setLeads, templat
         if (!message) return;
 
         try {
-            const { data: { session: activeSession } } = await supabase.auth.getSession();
+            const { data: { session: activeSession } } = await (supabase.auth as any).getSession();
             const currentUserId = activeSession?.user?.id || profile?.id;
 
             if (!currentUserId) {

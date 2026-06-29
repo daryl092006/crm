@@ -1,112 +1,129 @@
 :root {
+  --bg-dark: #0a0a0c;
+  --bg-card: #141417;
+  --bg-sidebar: #0d0d0f;
   --primary: #6366f1;
   --primary-glow: rgba(99, 102, 241, 0.4);
-  --bg-main: #0a0a0c;
-  --bg-card: #141417;
-  --bg-sidebar: #0f1012;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --border: rgba(255, 255, 255, 0.08);
   --accent: #22d3ee;
   --success: #10b981;
-  --warning: #f59e0b;
   --danger: #ef4444;
-  --glass: rgba(255, 255, 255, 0.03);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  --warning: #f59e0b;
+  --border: rgba(255, 255, 255, 0.08);
+  --text-muted: #94a3b8;
+  --surface-blur: blur(12px);
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
 }
 
 body {
-  font-family: 'Inter', -apple-system, sans-serif;
-  background-color: var(--bg-main);
-  color: var(--text-main);
+  background-color: var(--bg-dark);
+  color: white;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-#root {
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+.app-container {
   display: flex;
   min-height: 100vh;
-  width: 100%;
 }
 
 .sidebar {
-  width: 260px;
-  background-color: var(--bg-sidebar);
+  width: 280px;
+  background: #0d0d0f;
   border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  padding: 1.5rem;
+  padding: 2.5rem 1.5rem;
   position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 1000;
+  height: 100vh;
+  z-index: 200;
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
 }
 
 .main-content {
   flex: 1;
-  margin-left: 260px;
-  padding: 2.5rem;
-  min-height: 100vh;
-  transition: all 0.3s ease;
-  width: calc(100% - 260px);
+  margin-left: 280px;
+  padding: 2.5rem 3rem;
+  max-width: 1600px;
+  width: 100%;
+  min-width: 0;
 }
 
-/* Base Card & Layout improvements */
+/* Overlay pour fermer la sidebar sur mobile */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 150;
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.overlay.show {
+  display: block;
+  opacity: 1;
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    padding: 2rem;
+  }
+}
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 24px;
   padding: 1.5rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-}
-
-.table-container {
-  width: 100%;
-  overflow-x: auto;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.01);
-  scrollbar-width: thin;
-}
-
-.table-container::-webkit-scrollbar {
-  height: 6px;
-}
-
-.table-container::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .glass-card {
-  background: var(--glass);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(12px);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: var(--surface-blur);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
   padding: 1.5rem;
 }
 
 .btn {
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
   font-size: 0.875rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  gap: 0.625rem;
+  letter-spacing: -0.01em;
 }
 
 .btn-primary {
@@ -129,7 +146,7 @@ body {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
   margin-bottom: 2rem;
   width: 100%;
@@ -179,6 +196,7 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.9rem;
+  table-layout: auto; /* Default, but explicit */
 }
 
 th {
@@ -203,7 +221,19 @@ td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
   color: var(--text-main);
   vertical-align: middle;
+  white-space: nowrap; /* Keep this default but allow override */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-ellipsis {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table-fixed {
+  table-layout: fixed;
 }
 
 tr:last-child td {
@@ -504,7 +534,7 @@ tr:hover td {
 
   .main-content {
     margin-left: 0;
-    padding: 1.5rem;
+    padding: 1.5rem 1rem;
     width: 100%;
   }
 
@@ -551,9 +581,83 @@ tr:hover td {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Responsive Grid Utilities */
+.grid-responsive-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.grid-responsive-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.grid-responsive-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.grid-responsive-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 2rem;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 2rem;
+}
+
+.settings-split-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 2rem;
+}
+
+.settings-split-grid.single {
+  grid-template-columns: 1fr;
+}
+
+/* Tunnel de recrutement — responsive */
+.recruitment-tunnel {
+  display: flex;
+  gap: 8px;
+  height: 70px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.3);
+  padding: 6px;
+}
+
+.recruitment-tunnel-segment {
+  min-width: 40px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: help;
+  overflow: hidden;
+}
+
 @media (max-width: 768px) {
+  .grid-responsive-2,
+  .grid-responsive-3,
+  .grid-responsive-4,
+  .grid-responsive-layout,
+  .settings-grid,
+  .settings-split-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
   .stat-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 
@@ -581,7 +685,43 @@ tr:hover td {
 
   /* Better spacing for mobile */
   .main-content > div {
-    gap: 1.5rem !important;
+    gap: 1rem !important;
+  }
+
+  /* Tunnel segments hide text on small screens */
+  .recruitment-tunnel-segment > div > div:last-child {
+    display: none;
+  }
+}
+
+/* Mobile S — 480px */
+@media (max-width: 480px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .main-content {
+    padding: 1rem 0.75rem;
+  }
+
+  .card {
+    padding: 0.875rem;
+    border-radius: 16px;
+  }
+
+  h1 {
+    font-size: 1.25rem !important;
+  }
+
+  /* Filtres leads en colonne sur mobile S */
+  .leads-filters {
+    flex-direction: column !important;
+  }
+
+  .leads-filters > div {
+    width: 100% !important;
+    min-width: 0 !important;
   }
 }
 
@@ -589,6 +729,12 @@ tr:hover td {
 @media (min-width: 769px) and (max-width: 1024px) {
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-responsive-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .grid-responsive-layout {
+    grid-template-columns: 1fr !important;
   }
 }
 
@@ -618,16 +764,14 @@ select option {
   padding: 12px !important;
 }
 
-.overlay.show {
-  display: block;
-}
+/* .overlay.show styles are defined above in the base .overlay section */
 
 /* --- ELITE AI DIAGNOSTIC PANEL --- */
 .ai-side-panel {
   position: fixed;
   top: 0;
   right: -480px;
-  width: 480px;
+  width: min(480px, 100vw);
   height: 100vh;
   background: rgba(10, 10, 12, 0.8);
   backdrop-filter: blur(40px) saturate(180%);
@@ -641,6 +785,22 @@ select option {
 
 .ai-side-panel.open {
   right: 0;
+}
+
+@media (max-width: 480px) {
+  .ai-side-panel {
+    right: -100vw;
+    width: 100vw;
+  }
+  .ai-side-panel-header {
+    padding: 1.5rem;
+  }
+  .ai-side-panel-content {
+    padding: 1rem;
+  }
+  .ai-side-panel-footer {
+    padding: 1rem;
+  }
 }
 
 .ai-side-panel-header {
