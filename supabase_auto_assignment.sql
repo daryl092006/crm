@@ -21,6 +21,21 @@ BEGIN
             SELECT count(*) 
             FROM public.leads 
             WHERE leads.agent_id = profiles.id
+              AND status_id NOT IN (
+                'inscrit',
+                'pas_interesse',
+                'refus_categorique',
+                'inscrit_ailleurs',
+                'pas_moyens',
+                'annee_prochaine',
+                'pas_disponible',
+                'hors_cible',
+                'refus_repondre',
+                'faux_numero',
+                'whatsapp_indisponible',
+                'reorientation',
+                'perdu'
+              )
         ) ASC, random() -- En cas d'égalité, on prend au hasard
         LIMIT 1;
 

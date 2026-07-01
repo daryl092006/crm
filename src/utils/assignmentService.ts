@@ -13,9 +13,21 @@ export const getBestAgentForLead = (agents: Agent[], leads: StudentLead[]): Agen
     const agentsWithOpenLeads = agents.map(agent => {
         const openLeadsCount = leads.filter(lead =>
             lead.agentId === agent.id &&
-            lead.statusId !== 'inscrit' &&
-            lead.statusId !== 'perdu' &&
-            lead.statusId !== 'faux_numero'
+            ![
+                'inscrit',
+                'pas_interesse',
+                'refus_categorique',
+                'inscrit_ailleurs',
+                'pas_moyens',
+                'annee_prochaine',
+                'pas_disponible',
+                'hors_cible',
+                'refus_repondre',
+                'faux_numero',
+                'whatsapp_indisponible',
+                'reorientation',
+                'perdu'
+            ].includes((lead.statusId || '').toLowerCase())
         ).length;
 
         return {

@@ -483,7 +483,25 @@ function App() {
 
       if (agentsData) setAgents((agentsData as any[]).filter((a) => a.id !== '00000000-0000-0000-0000-000000000000' && ['agent', 'superagent'].includes(a.role)).map((a): Agent => {
         const agentLeads = (leadsData || []).filter((l) => (l as any).agent_id === a.id);
-        const assignedCount = agentLeads.length;
+        const openLeads = agentLeads.filter((l) => {
+          const sid = (l.status_id || '').toLowerCase();
+          return ![
+            'inscrit',
+            'pas_interesse',
+            'refus_categorique',
+            'inscrit_ailleurs',
+            'pas_moyens',
+            'annee_prochaine',
+            'pas_disponible',
+            'hors_cible',
+            'refus_repondre',
+            'faux_numero',
+            'whatsapp_indisponible',
+            'reorientation',
+            'perdu'
+          ].includes(sid);
+        });
+        const assignedCount = openLeads.length;
 
         const contactedCount = agentLeads.filter(l => {
           const sid = (l.status_id || '').toLowerCase();
