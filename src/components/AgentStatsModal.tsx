@@ -324,8 +324,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
         if (availableAgents.length === 0) return addToast("Aucun autre agent disponible.", "error");
 
         const confirmed = await showConfirm(
-            "IA Smart Balance",
-            `L'IA va répartir équitablement ${selectedLeadIds.length} prospects entre les ${availableAgents.length} autres agents. Continuer ?`
+            "Répartition Automatique",
+            `Le système va répartir équitablement ${selectedLeadIds.length} prospects entre les ${availableAgents.length} autres agents. Continuer ?`
         );
         if (!confirmed) return;
 
@@ -347,13 +347,13 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 if (error) throw error;
             }
 
-            addToast(`${selectedLeadIds.length} prospects répartis intelligemment !`, "success");
+            addToast(`${selectedLeadIds.length} prospects répartis avec succès !`, "success");
             if (onRefresh) await onRefresh();
             else if (onClose) onClose();
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
         } catch (error) {
-            addToast("Erreur lors de la répartition IA.", "error");
+            addToast("Erreur lors de la répartition automatique.", "error");
         } finally {
             setIsReassigning(false);
         }
@@ -373,8 +373,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
     const handleMassHarmonize = async () => {
         const confirmed = await showConfirm(
-            "Nettoyage IA & Fusion des Doublons",
-            `L'Assistant IA va :\n1. SUPPRIMER définitivement les fiches en double (même numéro)\n2. Corriger les formats (Bénin +229, indicatifs, etc.)\n3. Uniformiser les identités (NOMS en majuscules, Prénoms propres)\n4. Nettoyer les pays et les caractères invisibles\n\nCette action est irréversible pour les doublons. Continuer ?`
+            "Nettoyage & Fusion des Doublons",
+            `L'outil de nettoyage va :\n1. SUPPRIMER définitivement les fiches en double (même numéro)\n2. Corriger les formats (Bénin +229, indicatifs, etc.)\n3. Uniformiser les identités (NOMS en majuscules, Prénoms propres)\n4. Nettoyer les pays et les caractères invisibles\n\nCette action est irréversible pour les doublons. Continuer ?`
         );
 
         if (!confirmed) return;
@@ -506,12 +506,12 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 }));
             }
 
-            addToast(`IA Terminée : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés définitivement.`, "success");
+            addToast(`Nettoyage terminé : ${updatedCount} fiches corrigées et ${mergedCount} doublons supprimés définitivement.`, "success");
             if (onRefresh) await onRefresh();
             else if (onClose) onClose();
         } catch (error: any) {
-            console.error("Détail Erreur IA:", error);
-            addToast(`Erreur : ${error?.message || "Échec du nettoyage IA"}`, "error");
+            console.error("Détail Erreur Nettoyage:", error);
+            addToast(`Erreur : ${error?.message || "Échec du nettoyage automatique"}`, "error");
         } finally {
             setIsHarmonizing(false);
         }
@@ -611,8 +611,8 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     {/* IA ASSISTANT AUTOMATIQUE BANNER */}
                     {aiAlerts.length > 0 && (
                         <div style={{
-                            background: 'linear-gradient(90deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08))',
-                            border: '1px solid rgba(99, 102, 241, 0.2)',
+                            background: 'linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(96, 165, 250, 0.08))',
+                            border: '1px solid rgba(37, 99, 235, 0.2)',
                             borderRadius: '24px',
                             padding: '1.5rem',
                             marginBottom: '3rem',
@@ -804,7 +804,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                             <div style={{ display: 'flex', gap: '0.75rem' }}>
                                 <button onClick={handleMassHarmonize} disabled={isHarmonizing} className="btn" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.2)', padding: '0.8rem 1.5rem', borderRadius: '14px' }}>
-                                    <Sparkles size={18} className={isHarmonizing ? 'animate-spin' : ''} /> {isHarmonizing ? 'Analyse...' : 'Assistant IA'}
+                                    <Sparkles size={18} className={isHarmonizing ? 'animate-spin' : ''} /> {isHarmonizing ? 'Analyse...' : 'Nettoyer la liste'}
                                 </button>
                                 <button onClick={() => handleExport(['firstName', 'lastName', 'email', 'phone', 'country', 'statusId', 'fieldOfInterest', 'score', 'notes'])} className="btn btn-primary" style={{ borderRadius: '14px', padding: '0.8rem 1.5rem' }}>
                                     <Download size={18} /> Rapport Complet
@@ -1003,14 +1003,14 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                     }}
                 />
 
-                {/* AI DIAGNOSTIC SIDE PANEL */}
+                {/* DIAGNOSTIC SIDE PANEL */}
                 <div className={`ai-side-panel ${showAiDetails ? 'open' : ''}`} onClick={e => e.stopPropagation()}>
                     <div className="ai-side-panel-header">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                             <div style={{ padding: '10px', background: 'linear-gradient(135deg, var(--primary), var(--accent))', borderRadius: '12px' }}>
                                 <Sparkles size={20} color="white" />
                             </div>
-                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>Elite Resolution</h3>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900 }}>Résolution des Doublons</h3>
                         </div>
                         <button onClick={() => setShowAiDetails(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer' }}><X size={20} /></button>
                     </div>
@@ -1033,7 +1033,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
                     <div className="ai-side-panel-footer">
                         <button onClick={handleMassHarmonize} disabled={isHarmonizing} className="btn btn-primary" style={{ width: '100%', padding: '1.25rem', borderRadius: '18px', fontWeight: 900 }}>
-                            {isHarmonizing ? 'Harmonisation...' : 'Lancer le Nettoyage IA'}
+                            {isHarmonizing ? 'Nettoyage...' : 'Lancer le Nettoyage automatique'}
                         </button>
                     </div>
                 </div>
@@ -1053,7 +1053,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                                     {agents.filter(a => a.id !== agent?.id).map(a => (
                                         <button key={a.id} onClick={() => handleBulkAssign(a.id)} style={{ width: '100%', padding: '12px 20px', background: 'transparent', border: 'none', color: 'white', textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 600 }}>{a.name}</button>
                                     ))}
-                                    <button onClick={handleSmartAutoBalance} style={{ width: '100%', padding: '15px', background: 'var(--accent)', border: 'none', color: 'white', fontWeight: 900 }}>IA Auto-Balance</button>
+                                    <button onClick={handleSmartAutoBalance} style={{ width: '100%', padding: '15px', background: 'var(--accent)', border: 'none', color: 'white', fontWeight: 900 }}>Répartition Auto</button>
                                 </div>
                             )}
                         </div>

@@ -134,6 +134,15 @@ function App() {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
+    const theme = localStorage.getItem('crm_theme');
+    if (theme === 'light') {
+      document.body.classList.add('light-mode');
+    } else {
+      document.body.classList.remove('light-mode');
+    }
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get('token');
     if (t) {

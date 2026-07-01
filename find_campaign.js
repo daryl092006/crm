@@ -1,13 +1,21 @@
+import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://ryzgxhfwuxpvnoxvscbk.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5emd4aGZ3dXhwdm5veHZzY2JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDgzMjgsImV4cCI6MjA4ODcyNDMyOH0.raMGoau9uxCzHzQlIqrDMIEbwXp8QHJ6ZvCjuCgAPyY';
+const content = fs.readFileSync('./src/supabaseClient.ts', 'utf8');
+const urlMatch = content.match(/supabaseUrl = '(.*?)'/);
+const keyMatch = content.match(/supabaseAnonKey = '(.*?)'/);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseUrl = urlMatch[1];
+const supabaseAnonKey = keyMatch[1];
 
-async function findCampaignId() {
-    const { data: campaigns } = await supabase.from('campaigns').select('id, name');
-    console.log('Campaigns:', campaigns);
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+async function run() {
+  const { data: progs, error: errProgs } = await supabase.from('programs').select('*');
+  console.log('Programs Error:', errProgs);
+  
+  const { data: srcs, error: errSrcs } = await supabase.from('prospect_sources').select('*');
+  console.log('Sources Error:', errSrcs);
 }
 
-findCampaignId();
+run();

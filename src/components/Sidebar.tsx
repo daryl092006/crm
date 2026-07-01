@@ -11,7 +11,9 @@ import {
     Shield,
     Mail,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Sun,
+    Moon
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -48,6 +50,20 @@ const Sidebar: React.FC<SidebarProps> = ({
     const isAdmin = profile?.role === 'admin';
     const isForced = profile?.must_change_password === true;
 
+    const [isLightMode, setIsLightMode] = React.useState(document.body.classList.contains('light-mode'));
+
+    const toggleTheme = () => {
+        if (document.body.classList.contains('light-mode')) {
+            document.body.classList.remove('light-mode');
+            localStorage.setItem('crm_theme', 'dark');
+            setIsLightMode(false);
+        } else {
+            document.body.classList.add('light-mode');
+            localStorage.setItem('crm_theme', 'light');
+            setIsLightMode(true);
+        }
+    };
+
     const isActive = (id: string) => {
         const route = TAB_ROUTES[id];
         if (!route) return false;
@@ -67,7 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const menuItems: { id: string; label: string; icon: any }[] = [
         { id: 'dashboard', label: ['admin', 'direction', 'superviseur', 'superagent'].includes(profile?.role || '') ? 'Tableau de Bord' : 'Mon Dashboard', icon: LayoutDashboard },
-        { id: 'pipeline', label: 'Pipeline IA', icon: LayoutList },
+        { id: 'pipeline', label: 'Pipeline', icon: LayoutList },
         { id: 'leads', label: 'Prospects (Liste)', icon: GraduationCap },
         { id: 'followups', label: 'Relances', icon: Clock },
         ...((['admin', 'superagent', 'direction', 'superviseur'].includes(profile?.role || ''))
@@ -248,6 +264,29 @@ const Sidebar: React.FC<SidebarProps> = ({
                         {!isCollapsed && <span style={{ fontSize: '0.925rem', whiteSpace: 'nowrap' }}>Paramètres</span>}
                     </button>
                 )}
+
+                {/* Sélecteur de Thème Sombre / Clair */}
+                <button
+                    onClick={toggleTheme}
+                    title={isCollapsed ? (isLightMode ? "Mode Sombre" : "Mode Clair") : undefined}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: isCollapsed ? 'center' : 'flex-start',
+                        gap: isCollapsed ? '0' : '0.75rem',
+                        padding: '0.75rem 1rem',
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        borderRadius: '12px',
+                        transition: 'all 0.2s',
+                        width: '100%'
+                    }}
+                >
+                    {isLightMode ? <Moon size={20} style={{ flexShrink: 0 }} /> : <Sun size={20} style={{ flexShrink: 0 }} />}
+                    {!isCollapsed && <span style={{ fontSize: '0.925rem', whiteSpace: 'nowrap' }}>{isLightMode ? "Mode Sombre" : "Mode Clair"}</span>}
+                </button>
 
                 {/* Déconnexion */}
                 <button

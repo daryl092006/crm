@@ -530,6 +530,19 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                     onClose={() => setIsExportModalOpen(false)}
                     onExport={handleExport}
                 />
+
+                <ImportLeadsModal
+                    isOpen={isImportModalOpen}
+                    onClose={() => setIsImportModalOpen(false)}
+                    campaigns={campaigns}
+                    agents={agents}
+                    leads={leads}
+                    profile={profile}
+                    defaultCampaignId={selectedCampaignId || undefined}
+                    onSuccess={async () => {
+                        if (onRefresh) await onRefresh();
+                    }}
+                />
             </div>
         );
     }
@@ -556,7 +569,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
             </div>
 
             <div className="stat-grid" style={{ marginBottom: '3rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-                <div className="card" style={{ padding: '2rem', background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), transparent)' }}>
+                <div className="card" style={{ padding: '2rem', background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.1), transparent)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                         <Target size={24} color="var(--primary)" />
                         <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)' }}>MÉTRIQUE CLÉ</span>
@@ -722,6 +735,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                 agents={agents}
                 leads={leads}
                 profile={profile}
+                defaultCampaignId={selectedCampaignId || undefined}
                 onSuccess={async () => {
                     if (onRefresh) await onRefresh();
                 }}

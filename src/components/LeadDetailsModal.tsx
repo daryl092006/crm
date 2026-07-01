@@ -32,6 +32,7 @@ const LeadDetailsModal: React.FC<LeadDetailsModalProps> = ({ lead, isOpen, onClo
     const [programId, setProgramId] = useState<string>(lead.programId || '');
     const [classificationId, setClassificationId] = useState<string>(lead.classificationId || '');
     const [sourceId, setSourceId] = useState<string>(lead.sourceId || '');
+    const [customMetadata, setCustomMetadata] = useState<Record<string, any>>(lead.metadata || {});
     const [note, setNote] = useState('');
     const [appointmentDate, setAppointmentDate] = useState('');
     const [appointmentType, setAppointmentType] = useState('En Ligne');
@@ -75,6 +76,7 @@ const LeadDetailsModal: React.FC<LeadDetailsModalProps> = ({ lead, isOpen, onClo
             setProgramId(lead.programId || '');
             setClassificationId(lead.classificationId || '');
             setSourceId(lead.sourceId || '');
+            setCustomMetadata(lead.metadata || {});
             setAppointmentDate('');
             setAppointmentType('En Ligne');
             setFollowUpDate('');
@@ -225,7 +227,8 @@ const LeadDetailsModal: React.FC<LeadDetailsModalProps> = ({ lead, isOpen, onClo
                     program_id: programId || null,
                     classification_id: classificationId || null,
                     source_id: sourceId || null,
-                    last_interaction_at: new Date().toISOString()
+                    last_interaction_at: new Date().toISOString(),
+                    metadata: customMetadata
                 })
                 .eq('id', lead.id);
             if (updateError) throw updateError;
@@ -537,6 +540,37 @@ const LeadDetailsModal: React.FC<LeadDetailsModalProps> = ({ lead, isOpen, onClo
                                 ))}
                             </select>
                         </div>
+
+                        {/* Champs personnalisés de la campagne */}
+                        {(() => {
+                            const selectedCampaign = campaigns.find(c => c.id === lead.campaignId);
+                            if (!selectedCampaign || !selectedCampaign.column_mappings) return null;
+
+                            const standardFields = ['firstName', 'lastName', 'email', 'phone', 'whatsapp', 'city', 'country', 'fieldOfInterest', 'level', 'statusId', 'campaignId', 'notes', 'programId', 'classificationId', 'sourceId'];
+                            const customMappings = selectedCampaign.column_mappings.filter(m => !standardFields.includes(m.field));
+
+                            if (customMappings.length === 0) return null;
+
+                            return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem', marginTop: '0.5rem' }}>
+                                    <h3 style={{ fontSize: '0.8rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Champs Spécifiques Campagne</h3>
+                                    {customMappings.map(m => {
+                                        const val = customMetadata[m.field] || '';
+                                        return (
+                                            <div key={m.field} className="form-group">
+                                                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem', display: 'block' }}>{m.label}</label>
+                                                <input
+                                                    type="text"
+                                                    value={val}
+                                                    onChange={e => setCustomMetadata({ ...customMetadata, [m.field]: e.target.value })}
+                                                    style={{ width: '100%', padding: '0.875rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '10px', color: 'white' }}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
 
                         {(statusId.toLowerCase().includes('inscrit') || statusId.toLowerCase().includes('confirme') || statusId.toLowerCase().includes('orientation')) && (
                             <div className="animate-fade" style={{ padding: '1.5rem', background: 'rgba(16, 185, 129, 0.05)', borderRadius: '16px', border: '1px solid rgba(16, 185, 129, 0.1)', marginTop: '0.5rem' }}>

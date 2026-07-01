@@ -102,7 +102,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     organization_id: profile?.organization_id,
                     program_id: newLead.programId || null,
                     classification_id: newLead.classificationId || null,
-                    source_id: newLead.sourceId || null
+                    source_id: newLead.sourceId || null,
+                    metadata: newLead.metadata || {}
                 }))
                 .eq('id', existing[0].id)
                 .select()
@@ -113,7 +114,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 return;
             }
             
-            addToast("Fiche mise à jour automatiquement par l'IA !", "success");
+            addToast("Fiche mise à jour automatiquement !", "success");
             if (updated) {
                 onSave({
                     id: updated.id,
@@ -136,7 +137,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     sourceId: updated.source_id,
                     score: updated.score || 0,
                     source: updated.source || null,
-                    whatsapp: updated.whatsapp || null
+                    whatsapp: updated.whatsapp || null,
+                    metadata: updated.metadata || {}
                 });
             }
             onClose();
@@ -160,7 +162,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 organization_id: profile?.organization_id || '00000000-0000-0000-0000-000000000000',
                 program_id: newLead.programId || null,
                 classification_id: newLead.classificationId || null,
-                source_id: newLead.sourceId || null
+                source_id: newLead.sourceId || null,
+                metadata: newLead.metadata || {}
             }))
             .select()
             .single();
@@ -204,7 +207,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 sourceId: data.source_id,
                 score: data.score || 0,
                 source: data.source || null,
-                whatsapp: data.whatsapp || null
+                whatsapp: data.whatsapp || null,
+                metadata: data.metadata || {}
             });
             // Déclencher la notification mail
             if (data.agent_id && selectedA) {
@@ -359,6 +363,35 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                             </select>
                         );
                     })()}
+                    {(() => {
+                        const selectedCampaign = campaigns.find(c => c.id === newLead.campaignId);
+                        if (!selectedCampaign || !selectedCampaign.column_mappings) return null;
+
+                        const standardFields = ['firstName', 'lastName', 'email', 'phone', 'whatsapp', 'city', 'country', 'fieldOfInterest', 'level', 'statusId', 'campaignId', 'notes', 'programId', 'classificationId', 'sourceId'];
+                        const customMappings = selectedCampaign.column_mappings.filter(m => !standardFields.includes(m.field));
+
+                        if (customMappings.length === 0) return null;
+
+                        return customMappings.map(m => {
+                            const val = (newLead.metadata as any)?.[m.field] || '';
+                            return (
+                                <div key={m.field} style={{ display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: 'span 2' }}>
+                                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 650 }}>{m.label}</label>
+                                    <input
+                                        type="text"
+                                        placeholder={`Saisir ${m.label.toLowerCase()}...`}
+                                        value={val}
+                                        onChange={e => {
+                                            const updatedMetadata = { ...((newLead.metadata || {}) as any), [m.field]: e.target.value };
+                                            setNewLead({ ...newLead, metadata: updatedMetadata });
+                                        }}
+                                        style={{ padding: '0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'white', width: '100%' }}
+                                    />
+                                </div>
+                            );
+                        });
+                    })()}
+
                     <textarea
                         placeholder="Note / Commentaire sur le prospect..."
                         value={newLead.notes}

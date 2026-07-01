@@ -16,6 +16,7 @@ interface ImportLeadsModalProps {
     leads: StudentLead[]; // Pour la déduplication locale et l'assignation
     profile: import('../types').Profile | null;
     onSuccess: () => void;
+    defaultCampaignId?: string; // Pré-sélectionner la campagne courante
 }
 
 interface ColumnMapping {
@@ -44,6 +45,7 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
     leads,
     profile,
     onSuccess,
+    defaultCampaignId,
 }) => {
     const { addToast } = useToast();
     const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Upload, 2: Mapping, 3: Preview/Report
@@ -76,7 +78,12 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
             setFileHeaders([]);
             setParsedData([]);
             setMappings([]);
-            if (campaigns.length > 0) setSelectedCampaignId(campaigns[0].id);
+            // Pré-sélectionner la campagne courante si fournie, sinon la première
+            if (defaultCampaignId) {
+                setSelectedCampaignId(defaultCampaignId);
+            } else if (campaigns.length > 0) {
+                setSelectedCampaignId(campaigns[0].id);
+            }
 
             // Charger les référentiels programmes et sources
             const fetchReferentials = async () => {
@@ -88,6 +95,16 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
             fetchReferentials();
         }
     }, [isOpen, campaigns]);
+
+    // Bloquer le scroll du body quand le modal est ouvert
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => { document.body.style.overflow = ''; };
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -143,23 +160,45 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
 
                 setParsedData(dataRows);
 
+                // Récupérer la campagne courante pour utiliser ses mappings configurés
+                const currentCampaign = campaigns.find(c => c.id === selectedCampaignId);
+                const targetFields = (currentCampaign?.column_mappings && currentCampaign.column_mappings.length > 0)
+                    ? currentCampaign.column_mappings
+                    : CRM_FIELDS;
+
                 // Tenter un mapping automatique
-                const autoMappings = CRM_FIELDS.map(fieldObj => {
-                    const normField = normalizeString(fieldObj.label);
-                    // Recherche de correspondance évidente
-                    let match = headers.find(h => {
-                        const normH = normalizeString(h);
-                        return normH === normField ||
-                            (fieldObj.field === 'firstName' && ['prenom', 'first name', 'first'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'lastName' && ['nom', 'last name', 'last', 'family'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'email' && ['mail', 'e-mail', 'courriel'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'phone' && ['tel', 'phone', 'telephone', 'mobile', 'contact'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'whatsapp' && ['whatsapp', 'whatapp', 'wsp'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'city' && ['ville', 'city'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'country' && ['pays', 'country'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'fieldOfInterest' && ['filiere', 'programme', 'souhait'].some(k => normH.includes(k))) ||
-                            (fieldObj.field === 'level' && ['niveau', 'study level', 'etudes'].some(k => normH.includes(k)));
-                    });
+                const autoMappings = targetFields.map((fieldObj: any) => {
+                    // Trouver le mapping configuré dans la campagne pour ce champ
+                    const campaignMapping = currentCampaign?.column_mappings?.find(
+                        (cm: any) => cm.field === fieldObj.field
+                    );
+
+                    let match = '';
+                    if (campaignMapping) {
+                        // Chercher une correspondance exacte (insensible à la casse/espaces) dans les en-têtes du fichier
+                        match = headers.find(h => h.trim().toLowerCase() === campaignMapping.label.trim().toLowerCase()) || '';
+                    } else if (currentCampaign?.column_mappings && currentCampaign.column_mappings.length > 0) {
+                        // Si on a des mappings de la campagne et qu'on cherche le champ personnalisé courant
+                        match = headers.find(h => h.trim().toLowerCase() === fieldObj.label.trim().toLowerCase()) || '';
+                    }
+
+                    // Fallback sur la recherche générique intelligente si aucun mapping de campagne ne correspond
+                    if (!match) {
+                        const normField = normalizeString(fieldObj.label);
+                        match = headers.find(h => {
+                            const normH = normalizeString(h);
+                            return normH === normField ||
+                                (fieldObj.field === 'firstName' && ['prenom', 'first name', 'first'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'lastName' && ['nom', 'last name', 'last', 'family'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'email' && ['mail', 'e-mail', 'courriel'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'phone' && ['tel', 'phone', 'telephone', 'mobile', 'contact'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'whatsapp' && ['whatsapp', 'whatapp', 'wsp'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'city' && ['ville', 'city'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'country' && ['pays', 'country'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'fieldOfInterest' && ['filiere', 'programme', 'souhait'].some(k => normH.includes(k))) ||
+                                (fieldObj.field === 'level' && ['niveau', 'study level', 'etudes'].some(k => normH.includes(k)));
+                        }) || '';
+                    }
 
                     return {
                         field: fieldObj.field,
@@ -169,7 +208,13 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                 });
 
                 setMappings(autoMappings);
-                setStep(2);
+                
+                // Si la campagne a des mappings définis, lancer l'analyse directement pour sauter l'étape 2
+                if (currentCampaign?.column_mappings && currentCampaign.column_mappings.length > 0) {
+                    handleAnalyze(autoMappings, dataRows);
+                } else {
+                    setStep(2);
+                }
             } catch (err) {
                 addToast("Erreur lors de la lecture du fichier.", "error");
                 console.error(err);
@@ -184,7 +229,10 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
     };
 
     // Analyser et détecter les doublons/erreurs
-    const handleAnalyze = async () => {
+    const handleAnalyze = async (mappingsParam?: ColumnMapping[], dataRowsParam?: any[]) => {
+        const activeMappings = mappingsParam || mappings;
+        const activeData = dataRowsParam || parsedData;
+
         if (!selectedCampaignId) {
             addToast("Veuillez sélectionner une campagne.", "warning");
             return;
@@ -213,13 +261,13 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
             const seenInFileEmails = new Set<string>();
             const seenInFilePhones = new Set<string>();
 
-            parsedData.forEach((row) => {
+            activeData.forEach((row) => {
                 const getMappedVal = (field: string) => {
-                    const col = mappings.find(m => m.field === field)?.targetColumn;
+                    const col = activeMappings.find(m => m.field === field)?.targetColumn;
                     return col ? String(row[col] || '').trim() : '';
                 };
 
-                const firstName = getMappedVal('firstName');
+                const firstName = getMappedVal('firstName') || 'Prospect';
                 const lastName = getMappedVal('lastName');
                 const email = getMappedVal('email');
                 const phone = getMappedVal('phone');
@@ -237,10 +285,7 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                 let reason = '';
 
                 // Validation minimale
-                if (!firstName) {
-                    status = 'invalid';
-                    reason = 'Prénom obligatoire';
-                } else if (!normEmail && !normPhone && !normWhatsapp) {
+                if (!normEmail && !normPhone && !normWhatsapp) {
                     status = 'no_contact';  // Pas de contact → on saute mais on liste
                     reason = 'Aucun moyen de contact';
                 } else if (normEmail && !normEmail.includes('@')) {
@@ -271,6 +316,14 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                 if (status === 'invalid') invalid++;
                 if (status === 'no_contact') noContact++;
 
+                const metadataFields: Record<string, any> = {};
+                activeMappings.forEach(m => {
+                    const standardFields = ['firstName', 'lastName', 'email', 'phone', 'whatsapp', 'city', 'country', 'fieldOfInterest', 'level'];
+                    if (!standardFields.includes(m.field) && m.targetColumn) {
+                        metadataFields[m.field] = String(row[m.targetColumn] || '').trim();
+                    }
+                });
+
                 processedRows.push({
                     firstName,
                     lastName,
@@ -281,13 +334,14 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                     country,
                     fieldOfInterest,
                     level,
+                    metadata: metadataFields,
                     status,
                     reason
                 });
             });
 
             setReport({
-                total: parsedData.length,
+                total: activeData.length,
                 valid,
                 duplicatesInFile,
                 duplicatesInDb,
@@ -309,10 +363,22 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
     const handleImport = async () => {
         setLoading(true);
         try {
-            // 1. Créer le lot d'importation dans prospect_import_batches
-            const { data: batch, error: batchError } = await supabase
+            // 1. Générer l'ID de lot côté client et créer le lot dans prospect_import_batches
+            const batchId = (() => {
+                if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                    return crypto.randomUUID();
+                }
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            })();
+
+            const { error: batchError } = await supabase
                 .from('prospect_import_batches')
                 .insert({
+                    id: batchId,
                     campaign_id: selectedCampaignId,
                     imported_by: profile?.id || null,
                     file_name: file?.name || 'Fichier.xlsx',
@@ -332,9 +398,7 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                         }
                     },
                     completed_at: new Date().toISOString()
-                })
-                .select()
-                .single();
+                });
 
             if (batchError) throw batchError;
 
@@ -374,9 +438,10 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                         study_level: row.level || null,
                         status_id: 'nouveau',
                         source: source,
-                        import_batch_id: batch.id,
+                        import_batch_id: batchId,
                         program_id: matchedProgram ? matchedProgram.id : null,
-                        source_id: matchedSource ? matchedSource.id : null
+                        source_id: matchedSource ? matchedSource.id : null,
+                        metadata: row.metadata || {}
                     };
                 });
 
@@ -424,18 +489,21 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
             addToast(`Importation réussie : ${report.valid} prospects insérés !`, "success");
             onSuccess();
             onClose();
-        } catch (err: unknown) {
-            addToast("Erreur lors de l'importation : " + (err as Error).message, "error");
+        } catch (err: any) {
+            console.error("Import error detail:", err);
+            const msg = err.message || err.details || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            addToast("Erreur lors de l'importation : " + msg, "error");
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="modal-overlay" style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
-            backdropFilter: 'blur(8px)', display: 'grid', placeItems: 'center',
-            zIndex: 1550, padding: '1rem'
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 9999, padding: '1rem'
         }}>
             <div className="card" style={{ width: '100%', maxWidth: '750px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 
@@ -457,14 +525,21 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                             <div className="form-group">
                                 <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Campagne de rattachement</label>
-                                <select
-                                    value={selectedCampaignId}
-                                    onChange={e => setSelectedCampaignId(e.target.value)}
-                                    style={{ width: '100%', padding: '0.875rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', color: 'white' }}
-                                >
-                                    <option value="">Sélectionner une campagne...</option>
-                                    {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
+                                {defaultCampaignId ? (
+                                    <div style={{ width: '100%', padding: '0.875rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '12px', color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <span style={{ fontSize: '1rem' }}>📌</span>
+                                        <span style={{ fontWeight: 700 }}>{campaigns.find(c => c.id === defaultCampaignId)?.name || defaultCampaignId}</span>
+                                    </div>
+                                ) : (
+                                    <select
+                                        value={selectedCampaignId}
+                                        onChange={e => setSelectedCampaignId(e.target.value)}
+                                        style={{ width: '100%', padding: '0.875rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '12px', color: 'white' }}
+                                    >
+                                        <option value="">Sélectionner une campagne...</option>
+                                        {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                )}
                             </div>
 
                             <div className="form-group">
@@ -583,7 +658,16 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                                             <tr>
                                                 <th>Nom Complet</th>
                                                 <th>Moyen de contact</th>
-                                                <th>Filière d'intérêt</th>
+                                                {/* Colonnes dynamiques basées sur la campagne */}
+                                                {(() => {
+                                                    const currentCampaign = campaigns.find(c => c.id === selectedCampaignId);
+                                                    const standardFields = ['firstName', 'lastName', 'email', 'phone', 'whatsapp'];
+                                                    const mappingsToRender = currentCampaign?.column_mappings?.filter(m => !standardFields.includes(m.field)) || [
+                                                        { field: 'fieldOfInterest', label: 'Filière d\'intérêt' },
+                                                        { field: 'level', label: 'Niveau d\'études' }
+                                                    ];
+                                                    return mappingsToRender.map(m => <th key={m.field}>{m.label}</th>);
+                                                })()}
                                                 <th>Statut</th>
                                             </tr>
                                         </thead>
@@ -592,7 +676,20 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                                                 <tr key={idx}>
                                                     <td>{row.firstName} {row.lastName}</td>
                                                     <td>{row.email || row.phone || row.whatsapp || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
-                                                    <td>{row.fieldOfInterest}</td>
+                                                    {/* Valeurs dynamiques */}
+                                                    {(() => {
+                                                        const currentCampaign = campaigns.find(c => c.id === selectedCampaignId);
+                                                        const standardFields = ['firstName', 'lastName', 'email', 'phone', 'whatsapp'];
+                                                        const mappingsToRender = currentCampaign?.column_mappings?.filter(m => !standardFields.includes(m.field)) || [
+                                                            { field: 'fieldOfInterest', label: 'Filière d\'intérêt' },
+                                                            { field: 'level', label: 'Niveau d\'études' }
+                                                        ];
+                                                        return mappingsToRender.map(m => {
+                                                            const isStandard = ['city', 'country', 'fieldOfInterest', 'level'].includes(m.field);
+                                                            const val = isStandard ? (row as any)[m.field] : row.metadata?.[m.field];
+                                                            return <td key={m.field}>{val || <span style={{color:'var(--text-muted)'}}>—</span>}</td>;
+                                                        });
+                                                    })()}
                                                     <td>
                                                         <span style={{
                                                             padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 600,
@@ -631,7 +728,7 @@ export const ImportLeadsModal: React.FC<ImportLeadsModalProps> = ({
                         
                         {step === 2 && (
                             <button
-                                onClick={handleAnalyze}
+                                onClick={() => handleAnalyze()}
                                 disabled={loading}
                                 className="btn btn-primary"
                                 style={{ padding: '0.75rem 2rem', fontWeight: 700 }}
