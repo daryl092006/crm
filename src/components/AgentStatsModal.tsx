@@ -19,6 +19,7 @@ interface AgentStatsModalProps {
     statuses: LeadStatus[];
     agents: Agent[];
     campaigns: Campaign[];
+    profile: import('../types').Profile | null;
     onClose: () => void;
     onRefresh?: () => Promise<void>;
 }
@@ -26,7 +27,7 @@ interface AgentStatsModalProps {
 // --- CONFIGURATION DE RÉFÉRENCE NATIONALE (Désormais centralisée dans verificationService) ---
 
 
-const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, onClose, onRefresh }) => {
+const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLeads, statuses, agents, campaigns, profile, onClose, onRefresh }) => {
     const { addToast } = useToast();
     const { showConfirm } = usePopup();
     const [selectedLeadForOutcome, setSelectedLeadForOutcome] = useState<StudentLead | null>(null);
@@ -974,7 +975,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
                 </div>
 
                 {/* MODALS & OVERLAYS */}
-                <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} />
+                <OutcomeModal isOpen={!!selectedLeadForOutcome} lead={selectedLeadForOutcome} onClose={() => setSelectedLeadForOutcome(null)} onUpdate={(id, up) => setLeads(prev => prev.map(l => l.id === id ? { ...l, ...up } : l))} profile={profile} statuses={statuses} />
                 <LeadHistoryModal
                     isOpen={!!selectedLeadForHistory}
                     lead={selectedLeadForHistory}

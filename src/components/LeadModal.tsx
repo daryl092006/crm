@@ -133,7 +133,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                     createdAt: updated.created_at,
                     programId: updated.program_id,
                     classificationId: updated.classification_id,
-                    sourceId: updated.source_id
+                    sourceId: updated.source_id,
+                    score: updated.score || 0,
+                    source: updated.source || null,
+                    whatsapp: updated.whatsapp || null
                 });
             }
             onClose();
@@ -198,7 +201,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ isOpen, onClose, onSave, campaign
                 createdAt: data.created_at,
                 programId: data.program_id,
                 classificationId: data.classification_id,
-                sourceId: data.source_id
+                sourceId: data.source_id,
+                score: data.score || 0,
+                source: data.source || null,
+                whatsapp: data.whatsapp || null
             });
             // Déclencher la notification mail
             if (data.agent_id && selectedA) {

@@ -135,7 +135,12 @@ Deno.serve(async (req) => {
         }
 
         // Get payload parameters
-        const { fullName, email, organizationId, role = 'agent' } = await req.json()
+        const { fullName, email, organizationId, role = 'agent' } = await req.json() as {
+            fullName?: string;
+            email?: string;
+            organizationId?: string;
+            role?: string;
+        }
         if (!fullName || !email || !organizationId) {
             throw new Error("Missing required parameters: fullName, email, organizationId");
         }
@@ -149,7 +154,6 @@ Deno.serve(async (req) => {
             email: email,
             password: tempPassword,
             email_confirm: true,
-            email_change_confirm: false,
             user_metadata: { full_name: fullName },
             app_metadata: { provider: 'email' }
         })

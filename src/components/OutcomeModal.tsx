@@ -142,7 +142,7 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
 
             if (updateError) throw updateError;
 
-            const isAdmin = profile?.role === 'super_admin' || profile?.role === 'super_agent';
+            const isAdmin = profile?.role === 'admin' || profile?.role === 'superagent';
             const isAdminChange = profile?.id !== lead.agentId && isAdmin;
             const adminSuffix = isAdminChange ? ` (par Admin: ${profile?.full_name})` : '';
 
@@ -238,7 +238,7 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                                     <button
                                         key={item.id}
                                         onClick={() => handleDisposition(item.id as DispositionType)}
-                                        disabled={profile?.role === 'observer'}
+                                        disabled={profile?.role === 'direction'}
                                         className="btn btn-ghost"
                                         style={{
                                             padding: '0.75rem',
@@ -250,8 +250,8 @@ const OutcomeModal: React.FC<OutcomeModalProps> = ({ isOpen, lead, onClose, onUp
                                             background: 'rgba(255,255,255,0.01)',
                                             transition: 'all 0.2s',
                                             height: 'auto',
-                                            opacity: profile?.role === 'observer' ? 0.4 : 1,
-                                            cursor: profile?.role === 'observer' ? 'not-allowed' : 'pointer',
+                                            opacity: profile?.role === 'direction' ? 0.4 : 1,
+                                            cursor: profile?.role === 'direction' ? 'not-allowed' : 'pointer',
                                             minHeight: '44px'
                                         }}
                                         onMouseEnter={e => {

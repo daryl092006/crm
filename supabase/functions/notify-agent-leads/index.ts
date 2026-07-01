@@ -130,7 +130,10 @@ Deno.serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        const { agentId, count, campaignId } = await req.json()
+        const body = await req.json() as any
+        const agentId = body.agentId || body.agent_id
+        const campaignId = body.campaignId || body.campaign_id
+        const count = body.count
 
         if (!agentId) {
             throw new Error("Missing agentId")

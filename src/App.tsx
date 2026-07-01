@@ -414,29 +414,31 @@ function App() {
 
       const allowedIds = requiredStatuses.map(rs => rs.id);
 
-      const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
-      if (toDelete.length > 0) {
-        console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
-        await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
+      if (profileData.role === 'admin') {
+        const toDelete = (statusesData || []).filter(s => !allowedIds.includes(s.id));
+        if (toDelete.length > 0) {
+          console.log("Deleting deprecated statuses:", toDelete.map(s => s.id));
+          await supabase.from('lead_statuses').delete().in('id', toDelete.map(s => s.id));
 
-        await supabase.from('leads')
-          .update({ status_id: 'nouveau' })
-          .not('status_id', 'in', `(${allowedIds.join(',')})`);
+          await supabase.from('leads')
+            .update({ status_id: 'nouveau' })
+            .not('status_id', 'in', `(${allowedIds.join(',')})`);
 
-        console.log("Database synchronized: legacy statuses migrated to 'nouveau'");
-      }
+          console.log("Database synchronized: legacy statuses migrated to 'nouveau'");
+        }
 
-      const existingIds = (statusesData || []).map(s => s.id);
-      const toCreate = requiredStatuses.filter(rs => !existingIds.includes(rs.id));
+        const existingIds = (statusesData || []).map(s => s.id);
+        const toCreate = requiredStatuses.filter(rs => !existingIds.includes(rs.id));
 
-      if (toCreate.length > 0) {
-        await supabase.from('lead_statuses').insert(toCreate.map(s => ({
-          id: s.id,
-          label: s.label,
-          color: s.color,
-          sort_order: s.sort_order,
-          organization_id: '00000000-0000-0000-0000-000000000000'
-        })));
+        if (toCreate.length > 0) {
+          await supabase.from('lead_statuses').insert(toCreate.map(s => ({
+            id: s.id,
+            label: s.label,
+            color: s.color,
+            sort_order: s.sort_order,
+            organization_id: '00000000-0000-0000-0000-000000000000'
+          })));
+        }
       }
 
       const { data: finalStatuses } = await supabase.from('lead_statuses').select('*').order('sort_order');

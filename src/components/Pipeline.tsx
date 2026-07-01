@@ -224,6 +224,8 @@ const Pipeline: React.FC<PipelineProps> = ({ profile, leads, setLeads, campaigns
                 onUpdate={(leadId, updates) => {
                     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, ...updates } : l));
                 }}
+                profile={profile}
+                statuses={statuses}
             />
         </div>
     );

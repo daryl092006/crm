@@ -13,7 +13,8 @@ import {
     ChevronLeft,
     ChevronRight,
     Users,
-    Clock
+    Clock,
+    Pencil
 } from 'lucide-react';
 import type { StudentLead, Campaign, Agent } from '../types';
 import { getBestAgentForLead } from '../utils/assignmentService';
@@ -55,7 +56,8 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
     // FILTRE DE SÉCURITÉ : Les agents ne voient que LEURS campagnes 🎓
     const isAdmin = profile?.role === 'admin';
-    const displayedCampaigns = (isAdmin ? campaigns : campaigns.filter(c => leads.some(l => l.campaignId === c.id && l.agentId === profile?.id)))
+    const isManager = canManageCampaigns(profile?.role);
+    const displayedCampaigns = (isManager ? campaigns : campaigns.filter(c => leads.some(l => l.campaignId === c.id && l.agentId === profile?.id)))
         .filter(c => campaignStatusFilter === 'all' || (c.status || 'active') === campaignStatusFilter);
 
     // Reset pagination when campaign changes
@@ -345,7 +347,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
     const campaign = selectedCampaignId ? campaigns.find(c => c.id === selectedCampaignId) : null;
 
     if (selectedCampaignId && campaign) {
-        const campaignLeads = isAdmin
+        const campaignLeads = isManager
             ? leads.filter(l => l.campaignId === campaign.id)
             : leads.filter(l => l.campaignId === campaign.id && l.agentId === profile?.id);
         const mappings = campaign.column_mappings || [
@@ -375,16 +377,23 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                     </div>
 
                     <div style={{ display: 'flex', gap: '1rem' }}>
-                        {isAdmin && (
-                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                            {isManager && (
+                                <button onClick={() => handleEditCampaign(campaign.id, campaign.name)} className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: 'white' }} title="Modifier la campagne">
+                                    <Pencil size={18} />
+                                </button>
+                            )}
+                            {isManager && (
                                 <button onClick={() => handleMigrateCampaign(campaign.id)} className="btn" style={{ background: 'rgba(255,255,255,0.05)', color: 'white' }} title="Migrer vers une autre campagne">
                                     <Repeat size={18} />
                                 </button>
-                                <button onClick={() => handleClearCampaignLeads(campaign.id)} className="btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)' }}>
+                            )}
+                            {isAdmin && (
+                                <button onClick={() => handleClearCampaignLeads(campaign.id)} className="btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)' }} title="Vider la campagne">
                                     <Trash2 size={18} /> Vider
                                 </button>
-                            </div>
-                        )}
+                            )}
+                        </div>
                         <button onClick={() => setIsExportModalOpen(true)} className="btn btn-primary" style={{ padding: '0.75rem 1.5rem', borderRadius: '14px' }}>
                             <Download size={18} /> Exporter
                         </button>
@@ -559,7 +568,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <h2 style={{ fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.02em', margin: 0 }}>
-                    {isAdmin ? 'Toutes les Campagnes' : 'Mes Campagnes Assignées'}
+                    {isManager ? 'Toutes les Campagnes' : 'Mes Campagnes Assignées'}
                 </h2>
                 
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
@@ -582,7 +591,7 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '2rem' }}>
                 {displayedCampaigns.map((campaign) => {
-                    const cLeads = isAdmin ? leads.filter(l => l.campaignId === campaign.id) : leads.filter(l => l.campaignId === campaign.id && l.agentId === profile?.id);
+                    const cLeads = isManager ? leads.filter(l => l.campaignId === campaign.id) : leads.filter(l => l.campaignId === campaign.id && l.agentId === profile?.id);
                     const totalLeads = cLeads.length;
                     const conv = cLeads.filter(l => ['inscrit', 'admis'].some(k => (l.statusId || '').toLowerCase().includes(k))).length;
                     const rate = totalLeads > 0 ? Math.round((conv / totalLeads) * 100) : 0;
@@ -640,7 +649,6 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                             </div>
 
                             {/* Classification Breakdown (Mini Pipeline) */}
-
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginTop: '1.25rem' }}>
                                 {[
                                     { label: 'Qualif.', val: qCount, color: 'var(--warning)' },
@@ -657,11 +665,22 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                             </div>
 
                             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                {isManager && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleEditCampaign(campaign.id, campaign.name); }}
+                                        className="btn"
+                                        style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'white', padding: '0.5rem', flex: 0 }}
+                                        title="Modifier la campagne"
+                                    >
+                                        <Pencil size={16} />
+                                    </button>
+                                )}
                                 {isAdmin && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(campaign.id); }}
                                         className="btn"
                                         style={{ background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', padding: '0.5rem', flex: 0 }}
+                                        title="Archiver la campagne"
                                     >
                                         <Trash2 size={16} />
                                     </button>
@@ -680,8 +699,8 @@ const Campaigns: React.FC<CampaignsProps> = ({ profile, campaigns, setCampaigns,
                         <Target size={40} color="var(--text-muted)" />
                     </div>
                     <h3 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.5rem' }}>Aucune campagne pour le moment</h3>
-                    <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>{isAdmin ? 'Commencez par créer votre première source d\'acquisition de prospects.' : 'Aucune campagne ne vous est assignée pour le moment.'}</p>
-                    {isAdmin && (
+                    <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>{isManager ? 'Commencez par créer votre première source d\'acquisition de prospects.' : 'Aucune campagne ne vous est assignée pour le moment.'}</p>
+                    {isManager && (
                         <button onClick={() => setIsAddCampaignModalOpen(true)} className="btn btn-primary" style={{ padding: '0.8rem 2.5rem', borderRadius: '16px' }}>+ Nouvelle Campagne</button>
                     )}
                 </div>

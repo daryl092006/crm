@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts"
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -33,14 +34,16 @@ Deno.serve(async (req) => {
             .eq('id', user.id)
             .single();
 
-        if (!profileError || !profile) {
-            if (!['admin', 'superagent', 'superviseur'].includes(profile.role)) {
-                throw new Error("Forbidden: Only admins, superagents and superviseurs can send bulk emails");
-            }
+        if (profileError || !profile) {
+            throw new Error("Forbidden: User profile not found");
+        }
+        if (!['admin', 'superagent', 'superviseur'].includes(profile.role)) {
+            throw new Error("Forbidden: Only admins, superagents and superviseurs can send bulk emails");
         }
 
         // Get payload parameters
-        const { campaignId } = await req.json()
+        const body = await req.json() as any
+        const campaignId = body.campaignId || body.campaign_id
         if (!campaignId) throw new Error("Missing campaignId parameter");
 
         // Fetch email campaign details
@@ -90,7 +93,7 @@ Deno.serve(async (req) => {
             }
 
             const buffer = await fileBlob.arrayBuffer();
-            const base64Content = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+            const base64Content = encodeBase64(new Uint8Array(buffer));
 
             resendAttachments.push({
                 content: base64Content,
@@ -246,7 +249,7 @@ Deno.serve(async (req) => {
                     })
                 });
 
-                const resData = await res.json();
+                const resData = await res.json() as any;
 
                 if (res.ok) {
                     sentCount++;
