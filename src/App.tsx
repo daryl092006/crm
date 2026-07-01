@@ -481,7 +481,7 @@ function App() {
         metadata: c.metadata
       })));
 
-      if (agentsData) setAgents((agentsData as any[]).filter((a) => a.id !== '00000000-0000-0000-0000-000000000000' && a.role !== 'admin').map((a): Agent => {
+      if (agentsData) setAgents((agentsData as any[]).filter((a) => a.id !== '00000000-0000-0000-0000-000000000000' && ['agent', 'superagent'].includes(a.role)).map((a): Agent => {
         const agentLeads = (leadsData || []).filter((l) => (l as any).agent_id === a.id);
         const assignedCount = agentLeads.length;
 
@@ -545,9 +545,8 @@ function App() {
     }
   }
 
-  const handleUpdateLeads = async (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
-    if (typeof newLeads === 'function') setLeads(newLeads(leads));
-    else setLeads(newLeads);
+  const handleUpdateLeads = (newLeads: StudentLead[] | ((prev: StudentLead[]) => StudentLead[])) => {
+    setLeads(newLeads);
   }
 
   // Loader plein écran uniquement au premier chargement

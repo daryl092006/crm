@@ -309,6 +309,7 @@ const AgentStatsModal: React.FC<AgentStatsModalProps> = ({ agent, leads, setLead
 
             setLeads((prev: StudentLead[]) => prev.map(l => selectedLeadIds.includes(l.id) ? { ...l, agentId: targetAgentId } : l));
             addToast(`${selectedLeadIds.length} prospects réattribués avec succès !`, "success");
+            if (onRefresh) await onRefresh();
             setSelectedLeadIds([]);
             setShowReassignDropdown(false);
         } catch (error) {
